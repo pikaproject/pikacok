@@ -23,8 +23,8 @@ from misskaty.vars import COMMAND_HANDLER
 from utils import get_file_id
 
 
-@app.on_message(filters.command(["mediainfo"], COMMAND_HANDLER))
-@use_chat_lang()
+#@app.on_message(filters.command(["mediainfo"], COMMAND_HANDLER))
+#@use_chat_lang()
 async def mediainfo(_, ctx: Message, strings):
     if ctx.reply_to_message and ctx.reply_to_message.media:
         process = await ctx.reply_msg(strings("processing_text"), quote=True)

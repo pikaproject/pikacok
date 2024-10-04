@@ -87,13 +87,13 @@ async def edit_or_reply(self, msg, **kwargs):
     await func(**{k: v for k, v in kwargs.items() if k in spec})
 
 
-@app.on_message(filters.command(["privacy"], COMMAND_HANDLER))
+#@app.on_message(filters.command(["privacy"], COMMAND_HANDLER))
 @use_chat_lang()
 async def privacy_policy(self: Client, ctx: Message, strings):
     await ctx.reply_msg(strings("privacy_policy").format(botname=self.me.first_name), message_effect_id=5104841245755180586 if ctx.chat.type.value == "private" else None)
 
 
-@app.on_message(filters.command(["stars"], COMMAND_HANDLER))
+#@app.on_message(filters.command(["stars"], COMMAND_HANDLER))
 async def star_donation(self: Client, ctx: Message):
     amount = ctx.command[1] if len(ctx.command) == 2 and ctx.command[1].isdigit() else 5
     await self.send_invoice(
@@ -184,7 +184,7 @@ async def log_file(_, ctx: Message, strings):
         await msg.edit_msg("Unsupported parameter")
 
 
-@app.on_message(filters.command(["donate"], COMMAND_HANDLER))
+#@app.on_message(filters.command(["donate"], COMMAND_HANDLER))
 async def donate(self: Client, ctx: Message):
     try:
         await self.send_photo(
@@ -394,16 +394,16 @@ async def unban_globally(_, ctx: Message):
         await ctx.reply_text(f"Lifted {user_mention}'s Global Ban.'")
 
 
-@app.on_message(
-    filters.command(["shell", "sh", "term"], COMMAND_HANDLER) & filters.user(SUDO)
-)
-@app.on_edited_message(
-    filters.command(["shell", "sh", "term"], COMMAND_HANDLER)
-    & filters.user(SUDO)
-    & ~filters.react
-)
-@user.on_message(filters.command(["shell", "sh", "term"], ".") & filters.me)
-@use_chat_lang()
+#@app.on_message(
+#    filters.command(["shell", "sh", "term"], COMMAND_HANDLER) & filters.user(SUDO)
+#)
+#@app.on_edited_message(
+#    filters.command(["shell", "sh", "term"], COMMAND_HANDLER)
+#    & filters.user(SUDO)
+#    & ~filters.react
+#)
+#@user.on_message(filters.command(["shell", "sh", "term"], ".") & filters.me)
+#@use_chat_lang()
 async def shell_cmd(self: Client, ctx: Message, strings):
     if len(ctx.command) == 1:
         return await edit_or_reply(self, ctx, text=strings("no_cmd"))
@@ -606,7 +606,7 @@ async def cmd_eval(self: Client, ctx: Message, strings) -> Optional[str]:
 
 
 # Update and restart bot
-@app.on_message(filters.command(["restart"], COMMAND_HANDLER) & filters.user(SUDO))
+@app.on_message(filters.command(["restartcok"], COMMAND_HANDLER) & filters.user(SUDO))
 @use_chat_lang()
 async def update_restart(_, ctx: Message, strings):
     msg = await ctx.reply_msg(strings("up_and_rest"))

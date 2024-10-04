@@ -39,8 +39,8 @@ def rand_key():
     return str(uuid4())[:8]
 
 
-@app.on_cmd("ytsearch", no_channel=True)
-@use_chat_lang()
+#@app.on_cmd("ytsearch", no_channel=True)
+#@use_chat_lang()
 async def ytsearch(_, ctx: Message, strings):
     if len(ctx.command) == 1:
         return await ctx.reply_msg(strings("no_query"))
@@ -82,15 +82,15 @@ async def ytsearch(_, ctx: Message, strings):
     )
 
 
-@app.on_message(
-    filters.command(["ytdown"], COMMAND_HANDLER)
-    | filters.regex(YT_REGEX)
-    & ~filters.channel
-    & ~filters.via_bot
-    & pyro_cooldown.wait(60)
-)
-@capture_err
-@use_chat_lang()
+#@app.on_message(
+#    filters.command(["ytdown"], COMMAND_HANDLER)
+#    | filters.regex(YT_REGEX)
+#    & ~filters.channel
+#    & ~filters.via_bot
+#    & pyro_cooldown.wait(60)
+#)
+#@capture_err
+#@use_chat_lang()
 async def ytdownv2(self, ctx: Message, strings):
     if not ctx.from_user:
         return await ctx.reply_msg(strings("no_channel"))
@@ -134,8 +134,8 @@ async def ytdownv2(self, ctx: Message, strings):
                 await ctx.reply("Invalid link.")
 
 
-@app.on_cb(filters.regex(r"^yt_listall"))
-@use_chat_lang()
+#@app.on_cb(filters.regex(r"^yt_listall"))
+#@use_chat_lang()
 async def ytdl_listall_callback(_, cq: CallbackQuery, strings):
     if cq.from_user.id != cq.message.reply_to_message.from_user.id:
         return await cq.answer(strings("unauth"), True)
@@ -149,8 +149,8 @@ async def ytdl_listall_callback(_, cq: CallbackQuery, strings):
         )
 
 
-@app.on_callback_query(filters.regex(r"^yt_extract_info"))
-@use_chat_lang()
+#@app.on_callback_query(filters.regex(r"^yt_extract_info"))
+#@use_chat_lang()
 async def ytdl_extractinfo_callback(_, cq: CallbackQuery, strings):
     if cq.from_user.id != cq.message.reply_to_message.from_user.id:
         try:
@@ -186,9 +186,9 @@ async def ytdl_extractinfo_callback(_, cq: CallbackQuery, strings):
             await cq.edit_message_text(f"Extract Info Failed -> {e}")
 
 
-@app.on_callback_query(filters.regex(r"^yt_(gen|dl)"))
-@use_chat_lang()
-@new_task
+#@app.on_callback_query(filters.regex(r"^yt_(gen|dl)"))
+#@use_chat_lang()
+#@new_task
 async def ytdl_gendl_callback(self: Client, cq: CallbackQuery, strings):
     if not (cq.message.reply_to_message and cq.message.reply_to_message.from_user):
         return
@@ -243,8 +243,8 @@ async def ytdl_gendl_callback(self: Client, cq: CallbackQuery, strings):
                 pass
 
 
-@app.on_callback_query(filters.regex(r"^yt_cancel"))
-@use_chat_lang()
+#@app.on_callback_query(filters.regex(r"^yt_cancel"))
+#@use_chat_lang()
 async def ytdl_cancel_callback(_, cq: CallbackQuery, strings):
     if cq.from_user.id != cq.message.reply_to_message.from_user.id:
         return await cq.answer(strings("unauth"), True)
@@ -261,8 +261,8 @@ async def ytdl_cancel_callback(_, cq: CallbackQuery, strings):
         return
 
 
-@app.on_callback_query(filters.regex(r"^ytdl_scroll"))
-@use_chat_lang()
+#@app.on_callback_query(filters.regex(r"^ytdl_scroll"))
+#@use_chat_lang()
 async def ytdl_scroll_callback(_, cq: CallbackQuery, strings):
     if cq.from_user.id != cq.message.reply_to_message.from_user.id:
         return await cq.answer(strings("unauth"), True)
