@@ -48,7 +48,7 @@ web = {
     "yasirapi": "https://yasirapi.eu.org",
     "yasirapi_v2": "https://v2.yasirapi.eu.org",
     "pahe": "pahe.ink",
-    "savefilm21": "https://sf1.savefilm21.digital",
+    "savefilm21": "https://sf6.savefilm21.digital",
     "melongmovie": "https://melongmovie.site",
     "terbit21": "https://terbit21.gold",
     "lk21": "https://tv1.lk21official.pro",
@@ -56,7 +56,7 @@ web = {
     "movieku": "https://movieku.cloud",
     "kusonime": "https://kusonime.com",
     "lendrive": "https://lendrive.web.id",
-    "samehadaku": "https://samehadaku.help",
+    "samehadaku": "https://samehadaku.email",
     "oplovers": "https://oploverz.red",
     "nodrakor": "https://no-drakor.xyz",
 }
