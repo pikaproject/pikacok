@@ -48,15 +48,15 @@ web = {
     "yasirapi": "https://yasirapi.eu.org",
     "yasirapi_v2": "https://v2.yasirapi.eu.org",
     "pahe": "pahe.ink",
-    "savefilm21": "https://sf6.savefilm21.digital",
-    "melongmovie": "https://melongmovie.site",
-    "terbit21": "https://terbit21.gold",
-    "lk21": "https://tv1.lk21official.pro",
+    "savefilm21": "https://sf6.savefilm21digital.com",
+    "melongmovie": "https://melongmovie.store",
+    "terbit21": "https://terbit21.cc",
+    "lk21": "https://tv12.lk21official.my/",
     "gomov": "https://klikxxi.com",
     "movieku": "https://movieku.cloud",
     "kusonime": "https://kusonime.com",
     "lendrive": "https://lendrive.web.id",
-    "samehadaku": "https://samehadaku.email",
+    "samehadaku": "https://samehadaku.help",
     "oplovers": "https://oploverz.red",
     "nodrakor": "https://no-drakor.xyz",
 }
@@ -236,7 +236,7 @@ async def getDataKuso(msg, kueri, CurrentPage, user, strings):
 
 
 # Movieku GetData
-async def getDataMovieku(msg, kueri, CurrentPage, strings):
+async def getDataMovieku(msg, kueri, CurrentPage, user, strings):
     if not SCRAP_DICT.get(msg.id):
         moviekudata = []
         with contextlib.redirect_stdout(sys.stderr):
@@ -249,7 +249,7 @@ async def getDataMovieku(msg, kueri, CurrentPage, strings):
                 await msg.edit_msg(
                     f"ERROR: Failed to fetch data from {exc.request.url} - <code>{exc}</code>"
                 )
-                return None, None
+                return None, 0, None
         r = BeautifulSoup(data, "lxml")
         res = r.find_all(class_="bx")
         for i in res:
@@ -260,10 +260,11 @@ async def getDataMovieku(msg, kueri, CurrentPage, strings):
             moviekudata.append({"judul": judul, "link": link, "type": typee})
         if not moviekudata:
             await msg.edit_msg(strings("no_result"), del_in=5)
-            return None, None
+            return None, 0, None
         SCRAP_DICT.add(msg.id, [split_arr(moviekudata, 6), kueri], timeout=1800)
     index = int(CurrentPage - 1)
     PageLen = len(SCRAP_DICT[msg.id][0])
+    extractbtn = []
 
     moviekuResult = (
         strings("header_no_query").format(web="Movieku", cmd="movieku")
@@ -271,8 +272,13 @@ async def getDataMovieku(msg, kueri, CurrentPage, strings):
         else strings("header_with_query").format(web="Movieku", kueri=kueri)
     )
     for c, i in enumerate(SCRAP_DICT[msg.id][0][index], start=1):
-        moviekuResult += f"<b>{index*6+c}. <a href='{i['link']}'>{i['judul']}</a></b>\n<b>{strings('quality')}/Status:</b> {i['type']}\n<b>Extract:</b> <code>/movieku_scrap {i['link']}</code>\n\n"
-    return moviekuResult, PageLen
+        moviekuResult += f"<b>{index*6+c}. <a href='{i['link']}'>{i['judul']}</a></b>\n<b>{strings('quality')}/Status:</b> {i['type']}\n\n"
+        extractbtn.append(
+            InlineButton(
+                index * 6 + c, f"moviekuextract#{CurrentPage}#{c}#{user}#{msg.id}"
+            )
+        )
+    return moviekuResult, PageLen, extractbtn
 
 
 # NoDrakor GetData
@@ -846,7 +852,7 @@ async def movieku_s(self, ctx: Message, strings):
         kueri = ""
     pesan = await ctx.reply_msg(strings("get_data"), quote=True)
     CurrentPage = 1
-    moviekures, PageLen = await getDataMovieku(pesan, kueri, CurrentPage, strings)
+    moviekures, PageLen, btn = await getDataMovieku(pesan, kueri, CurrentPage, ctx.from_user.id, strings)
     if not moviekures:
         return
     keyboard = InlineKeyboard()
@@ -855,6 +861,8 @@ async def movieku_s(self, ctx: Message, strings):
         CurrentPage,
         "page_movieku#{number}" + f"#{pesan.id}#{ctx.from_user.id}",
     )
+    keyboard.row(InlineButton(strings("ex_data"), user_id=self.me.id))
+    keyboard.row(*btn)
     keyboard.row(InlineButton(strings("cl_btn"), f"close#{ctx.from_user.id}"))
     await pesan.edit_msg(
         moviekures, disable_web_page_preview=True, reply_markup=keyboard
@@ -1038,7 +1046,7 @@ async def lendrivepage_callback(self, callback_query, strings):
 # Movieku Page Callback
 @app.on_cb("page_movieku#")
 @use_chat_lang()
-async def moviekupage_callback(_, callback_query, strings):
+async def moviekupage_callback(self, callback_query, strings):
     try:
         if callback_query.from_user.id != int(callback_query.data.split("#")[3]):
             return await callback_query.answer(strings("unauth"), True)
@@ -1051,8 +1059,8 @@ async def moviekupage_callback(_, callback_query, strings):
         return await callback_query.message.edit_msg(strings("invalid_cb"), True)
 
     try:
-        moviekures, PageLen = await getDataMovieku(
-            callback_query.message, kueri, CurrentPage, strings
+        moviekures, PageLen, btn = await getDataMovieku(
+            callback_query.message, kueri, CurrentPage, callback_query.from_user.id, strings
         )
     except TypeError:
         return
@@ -1063,6 +1071,8 @@ async def moviekupage_callback(_, callback_query, strings):
         CurrentPage,
         "page_movieku#{number}" + f"#{message_id}#{callback_query.from_user.id}",
     )
+    keyboard.row(InlineButton(strings("ex_data"), user_id=self.me.id))
+    keyboard.row(*btn)
     keyboard.row(
         InlineButton(strings("cl_btn"), f"close#{callback_query.from_user.id}")
     )
@@ -1440,40 +1450,75 @@ async def nodrakorddl_scrap(_, callback_query, strings):
             )
 
 
-# Scrape Link Download Movieku.CC
-@app.on_cmd("movieku_scrap")
+# Scrape DDL Link Melongmovie
+@app.on_cb("moviekuextract#")
 @use_chat_lang()
-async def muviku_scrap(_, message, strings):
+async def movieku_scrap(_, callback_query, strings):
+    try:
+        if callback_query.from_user.id != int(callback_query.data.split("#")[3]):
+            return await callback_query.answer(strings("unauth"), True)
+        idlink = int(callback_query.data.split("#")[2])
+        message_id = int(callback_query.data.split("#")[4])
+        CurrentPage = int(callback_query.data.split("#")[1])
+        link = SCRAP_DICT[message_id][0][CurrentPage - 1][idlink - 1].get("link")
+    except QueryIdInvalid:
+        return
+    except KeyError:
+        return await callback_query.message.edit_msg(strings("invalid_cb"))
+
+    keyboard = InlineKeyboard()
+    keyboard.row(
+        InlineButton(
+            strings("back_btn"),
+            f"page_movieku#{CurrentPage}#{message_id}#{callback_query.from_user.id}",
+        ),
+        InlineButton(strings("cl_btn"), f"close#{callback_query.from_user.id}"),
+    )
     with contextlib.redirect_stdout(sys.stderr):
         try:
-            link = message.text.split(maxsplit=1)[1]
             html = await fetch.get(link)
             html.raise_for_status()
             soup = BeautifulSoup(html.text, "lxml")
-            res = soup.find_all(class_="smokeurl")
-            data = []
-            for i in res:
-                for b in range(len(i.find_all("a"))):
-                    link = i.find_all("a")[b]["href"]
-                    kualitas = i.find_all("a")[b].text
-                    # print(f"{kualitas}\n{link
-                    data.append({"link": link, "kualitas": kualitas})
-            if not data:
-                return await message.reply(strings("no_result"))
-            res = "".join(
-                f"<b>Host: {i['kualitas']}</b>\n{i['link']}\n\n" for i in data
-            )
-            await message.reply(res)
-        except IndexError:
-            return await message.reply(
-                strings("invalid_cmd_scrape").format(cmd=message.command[0])
-            )
+            data = {}
+            output = []
+            total_links = 0
+            valid_resolutions = {'1080p', '720p', '480p', '360p'}
+            current_title = None
+
+            for element in soup.find_all(['h3', 'p']):
+                if element.name == 'h3' and 'smokettl' in element.get('class', []):
+                    current_title = element.text.strip()
+                    if current_title not in data:
+                        data[current_title] = []
+                elif element.name == 'p' and current_title:
+                    strong_tag = element.find('strong')
+                    if strong_tag:
+                        resolution = strong_tag.text.strip()
+                        if resolution in valid_resolutions:
+                            total_links += 1
+                            links = ', '.join([f'<a href="{a["href"]}">{a.text.strip()}</a>' for a in element.find_all('a')])
+                            data[current_title].append(f"{resolution} {links}")
+
+            for title, resolutions in data.items():
+                output.append(title)
+                output.extend(resolutions)
+                output.append('')
+            if total_links > 70:
+                url = await post_to_telegraph(False, link, "<br>".join(output))
+                return await callback_query.message.edit_msg(strings("res_scrape").format(link=link, kl=f"Your result is too long, i have pasted your result on Telegraph:\n{url}"), reply_markup=keyboard)
+            if "\n".join(output) == "":
+                output = "\nOpen link in browser, click on episode page and use /movieku_scrap [page link] commands for extract download link"
+                return await callback_query.message.edit_msg(strings("res_scrape").format(link=link, kl=output), reply_markup=keyboard)
+            await callback_query.message.edit_msg(strings("res_scrape").format(link=link, kl="\n".join(output)), reply_markup=keyboard)
         except httpx.HTTPError as exc:
-            await message.reply(
-                f"HTTP Exception for {exc.request.url} - <code>{exc}</code>"
+            await callback_query.message.edit_msg(
+                f"HTTP Exception for {exc.request.url} - <code>{exc}</code>",
+                reply_markup=keyboard,
             )
-        except Exception as e:
-            await message.reply(f"ERROR: {str(e)}")
+        except Exception as err:
+            await callback_query.message.edit_msg(
+                f"ERROR: {err}", reply_markup=keyboard
+            )
 
 
 # Scrape DDL Link Melongmovie
@@ -1621,3 +1666,55 @@ async def lendrive_dl(_, callback_query, strings):
             await callback_query.message.edit_msg(
                 f"ERROR: {err}", reply_markup=keyboard
             )
+
+# Manual Scrape DDL Movieku.CC incase cannot auto scrape from button
+@app.on_cmd("movieku_scrap")
+@use_chat_lang()
+async def muviku_scrap(_, message, strings):
+    with contextlib.redirect_stdout(sys.stderr):
+        try:
+            link = message.text.split(maxsplit=1)[1]
+            html = await fetch.get(link)
+            html.raise_for_status()
+            soup = BeautifulSoup(html.text, "lxml")
+            data = {}
+            output = []
+            total_links = 0
+            valid_resolutions = {'1080p', '720p', '480p', '360p'}
+            current_title = None
+
+            for element in soup.find_all(['h3', 'p']):
+                if element.name == 'h3' and 'smokettl' in element.get('class', []):
+                    current_title = element.text.strip()
+                    if current_title not in data:
+                        data[current_title] = []
+                elif element.name == 'p' and current_title:
+                    strong_tag = element.find('strong')
+                    if strong_tag:
+                        resolution = strong_tag.text.strip()
+                        if resolution in valid_resolutions:
+                            links = ', '.join([f'<a href="{a["href"]}">{a.text.strip()}</a>' for a in element.find_all('a')])
+                            data[current_title].append(f"{resolution} {links}")
+
+            for title, resolutions in data.items():
+                output.append(title)
+                output.extend(resolutions)
+                output.append('')
+                for res in resolutions:
+                    total_links += res.count('<a href=')
+            if not data:
+                return await message.reply(strings("no_result"))
+            if total_links > 70:
+                url = await post_to_telegraph(False, link, "<br>".join(output))
+                return await message.reply_msg(f"Your result is too long, i have pasted your result on Telegraph:\n{url}")
+            await message.reply_msg("\n".join(output))
+        except IndexError:
+            return await message.reply(
+                strings("invalid_cmd_scrape").format(cmd=message.command[0])
+            )
+        except httpx.HTTPError as exc:
+            await message.reply(
+                f"HTTP Exception for {exc.request.url} - <code>{exc}</code>"
+            )
+        except Exception as e:
+            await message.reply(f"ERROR: {str(e)}")
