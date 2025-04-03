@@ -20,7 +20,6 @@ from urllib.parse import quote
 import aiohttp
 import httpx
 from bs4 import BeautifulSoup
-from deep_translator import GoogleTranslator
 from gtts import gTTS
 from PIL import Image
 from pyrogram import Client, filters
@@ -39,8 +38,7 @@ from pyrogram.types import (
 
 from misskaty import BOT_USERNAME, app
 from misskaty.core.decorator.errors import capture_err
-from misskaty.helper.http import fetch
-from misskaty.helper.tools import gen_trans_image, rentry
+from misskaty.helper import fetch, gtranslate, gen_trans_image, rentry
 from misskaty.vars import COMMAND_HANDLER
 from utils import extract_user, get_file_id
 
@@ -319,14 +317,18 @@ async def stackoverflow(_, message):
 
 @app.on_message(filters.command(["google"], COMMAND_HANDLER))
 @capture_err
-async def gsearch(_, message):
+async def gsearch(self, message):
     if len(message.command) == 1:
         return await message.reply("Give a query to search in Google!")
+    def shorten_text(text):
+        if len(text) > 150:
+            return text[:150] + "..."
+        return text
     query = message.text.split(maxsplit=1)[1]
     msg = await message.reply_text(f"**Googling** for `{query}` ...")
     try:
         gs = await fetch.get(
-            f"https://www.google.com/search?q={query}&gl=id&hl=id&num=17",
+            f"https://www.google.com/search?q={query}&gl=id&hl=id&num=16",
         )
         soup = BeautifulSoup(gs.text, "lxml")
 
@@ -336,17 +338,17 @@ async def gsearch(_, message):
         for result in soup.select(".tF2Cxc"):
             link = result.select_one(".yuRUbf a")["href"]
             title = result.select_one(".DKV0Md").text
-            try:
-                snippet = result.find(class_="kb0PBd cvP2Ce A9Y9g").get_text()
-            except:
+            if snippet := result.find(class_="VwiC3b yXK7lf p4wth r025kc hJNv6b"):
+                snippet = snippet.get_text()
+            elif snippet := result.find(class_="VwiC3b yXK7lf p4wth r025kc hJNv6b Hdw6tb"):
+                snippet = snippet.get_text()
+            else:
                 snippet = "-"
-
-            # appending data to an array
             data.append(
                 {
                     "title": html.escape(title),
                     "link": link,
-                    "snippet": html.escape(snippet),
+                    "snippet": shorten_text(html.escape(snippet)),
                 }
             )
         arr = json.dumps(data, indent=2, ensure_ascii=False)
@@ -358,7 +360,7 @@ async def gsearch(_, message):
     except Exception:
         exc = traceback.format_exc()
         return await msg.edit(exc)
-    await msg.edit(
+    await msg.edit_msg(
         text=f"<b>Ada {total} Hasil Pencarian dari {query}:</b>\n{res}<b>GoogleSearch by @{BOT_USERNAME}</b>",
         disable_web_page_preview=True,
     )
@@ -381,10 +383,10 @@ async def translate(_, message):
         text = message.text.split(None, 2)[2]
     msg = await message.reply_msg("Menerjemahkan...")
     try:
-        my_translator = GoogleTranslator(source="auto", target=target_lang)
-        result = my_translator.translate(text=text)
+        my_translator = await gtranslate(text, source="auto", target=target_lang)
+        result = my_translator.text
         await msg.edit_msg(
-            f"Translation using source = {my_translator.source} and target = {my_translator.target}\n\n-> {result}"
+            f"Translation using source = {my_translator.src} and target = {my_translator.dest}\n\n-> {result}"
         )
     except MessageTooLong:
         url = await rentry(result)
@@ -564,7 +566,7 @@ async def close_callback(_, query: CallbackQuery):
     if query.from_user.id != int(userid):
         with contextlib.suppress(QueryIdInvalid):
             return await query.answer("⚠️ Access Denied!", True)
-    with contextlib.redirect_stdout(Exception):
+    with contextlib.suppress(Exception):
         await query.answer("Deleting this message in 5 seconds.")
         await asyncio.sleep(5)
         await query.message.delete_msg()
