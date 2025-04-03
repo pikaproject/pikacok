@@ -11,7 +11,6 @@ from urllib.parse import quote_plus
 
 import httpx
 from bs4 import BeautifulSoup
-from deep_translator import GoogleTranslator
 from pykeyboard import InlineButton, InlineKeyboard
 from pyrogram import Client, enums
 from pyrogram.errors import (
@@ -34,7 +33,7 @@ from pyrogram.types import (
 
 from database.imdb_db import add_imdbset, is_imdbset, remove_imdbset
 from misskaty import app
-from misskaty.helper import GENRES_EMOJI, Cache, fetch, get_random_string, search_jw
+from misskaty.helper import GENRES_EMOJI, Cache, fetch, gtranslate, get_random_string, search_jw
 from utils import demoji
 
 LOGGER = logging.getLogger("MissKaty")
@@ -420,7 +419,7 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
                     .find(class_="ipc-metadata-list-item__content-container")
                     .text
                 )
-                res_str += f"<b>Durasi:</b> <code>{GoogleTranslator('auto', 'id').translate(durasi)}</code>\n"
+                res_str += f"<b>Durasi:</b> <code>{(await gtranslate(durasi, "auto", "id")).text}</code>\n"
             if kategori := r_json.get("contentRating"):
                 res_str += f"<b>Kategori:</b> <code>{kategori}</code> \n"
             if rating := r_json.get("aggregateRating"):
@@ -480,7 +479,7 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
                 )
                 res_str += f"<b>Pemeran:</b> {actor[:-2]}\n\n"
             if deskripsi := r_json.get("description"):
-                summary = GoogleTranslator("auto", "id").translate(deskripsi)
+                summary = (await gtranslate(deskripsi, "auto", "id")).text
                 res_str += f"<b>📜 Plot:</b>\n<blockquote><code>{summary}</code></blockquote>\n\n"
             if keywd := r_json.get("keywords"):
                 key_ = "".join(
@@ -496,7 +495,7 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
                     .find(class_="ipc-metadata-list-item__list-content-item")
                     .text
                 )
-                res_str += f"<b>🏆 Penghargaan:</b>\n<blockquote><code>{GoogleTranslator('auto', 'id').translate(awards)}</code></blockquote>\n"
+                res_str += f"<b>🏆 Penghargaan:</b>\n<blockquote><code>{(await gtranslate(awards, "auto", "id")).text}</code></blockquote>\n"
             else:
                 res_str += "\n"
             if ott != "":
