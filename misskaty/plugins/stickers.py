@@ -117,7 +117,7 @@ async def unkangs(self: Client, ctx: Message, strings):
         await ctx.reply_msg(strings("unkang_help").format(c=self.me.username), del_in=6)
 
 
-@app.on_cmd(["curi", "kang"])
+@app.on_cmd(["curi", "kang", "mpok", "mas", "mbak", "oma", "opa"])
 @use_chat_lang()
 async def kang_sticker(self: Client, ctx: Message, strings):
     if not ctx.from_user:
