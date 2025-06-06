@@ -11,14 +11,14 @@ from logging import getLogger
 from misskaty.vars import SUDO
 LOGGER = getLogger("MissKaty")
 kickdb = dbname["auto_kick"]
-DEFAULT_KICK_TIME = "30d"
+DEFAULT_KICK_TIME_MINUTES = int(os.getenv("DEFAULT_KICK_TIME_HOURS", "1"))
 
 @app.on_cmd(["autokick"], self_admin=True, group_only=True)
 @app.adminsOnly("can_restrict_members")
 @use_chat_lang()
 async def handle_autokick(client: Client, ctx: Message, strings) -> "Message":
     args = ctx.text.split()[1:]
-
+    time_args = None
     if not args and not ctx.reply_to_message:
         return await ctx.reply(
             "Usage:\n"
@@ -27,21 +27,22 @@ async def handle_autokick(client: Client, ctx: Message, strings) -> "Message":
             "`/autokick check <id|@username>` → cek sisa waktu autokick"
         )
 
-    subcommand = args[1].lower() if args else None
-    identifier = args[2] if len(args) > 2 else None
+    subcommand = args[0].lower() if args else None
+    identifier = args[1] if len(args) > 1 else None
+    if subcommand not in ["cancel", "check"]:
+        identifier = subcommand
+        time_args = args[1]
+
     target_user: User = None
     if ctx.reply_to_message and ctx.reply_to_message.from_user:
         target_user = ctx.reply_to_message.from_user
-        time_arg = args[0] if args else None
-    else:
-        if not args:
-            return await ctx.reply("❌ Format salah. Gunakan `/autokick @user 5m` atau reply.")
-        identifier = args[0]
+    elif identifier:
         try:
-            target_user = await app.get_users(int(identifier)) if identifier.isdigit() else await app.get_users(identifier)
+            target_user = await app.get_users(int(identifier) if identifier.isdigit() else identifier)
         except Exception:
-            return await ctx.reply("❌ Tidak bisa menemukan user.")
-        time_arg = args[1] if len(args) > 1 else None
+            return await ctx.reply(f"❌ Tidak bisa menemukan user dari input {identifier}, coba dengan mereply pesan dari user diikuti dengan waktu.")
+    else:
+        return await ctx.reply("❌ Harap reply ke user atau beri user_id/username.")
 
     if subcommand == "cancel":
         result = await kickdb.delete_one({
@@ -86,13 +87,13 @@ async def handle_autokick(client: Client, ctx: Message, strings) -> "Message":
             )
 
     else:
-        if time_arg:
-            try:
-                kick_time = parse_time_string(time_arg)
-            except ValueError as e:
-                return await ctx.reply(f"❌ {e}")
-        else:
-            kick_time = DEFAULT_KICK_TIME
+        try:
+            if time_args:
+                kick_time = parse_time_string(time_args)
+            else:
+                kick_time = parse_time_string(subcommand)
+        except ValueError as e:
+            return await ctx.reply(f"❌ {e}")
 
         kick_datetime = datetime.now(timezone.utc) + timedelta(minutes=kick_time)
 
