@@ -60,9 +60,9 @@ async def AutoKick(client: Client, ctx: Message, strings) -> "Message":
     )
 
 
-
 async def check_kicks():
     now = datetime.now(timezone.utc)
+    print(f"[INFO] Memeriksa kick yang harus dilakukan... {now}")
     kicks = []
     async for doc in kickdb.find({"kick_time": {"$lte": now}}):
         kicks.append(doc)
