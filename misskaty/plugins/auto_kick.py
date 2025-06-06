@@ -27,8 +27,8 @@ async def handle_autokick(client: Client, ctx: Message, strings) -> "Message":
             "`/autokick check <id|@username>` → cek sisa waktu autokick"
         )
 
-    subcommand = args[0].lower() if args else None
-    identifier = args[1] if len(args) > 1 else None
+    subcommand = args[1].lower() if args else None
+    identifier = args[2] if len(args) > 2 else None
     target_user: User = None
     if ctx.reply_to_message and ctx.reply_to_message.from_user:
         target_user = ctx.reply_to_message.from_user
