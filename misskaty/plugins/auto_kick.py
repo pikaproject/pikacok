@@ -85,7 +85,7 @@ async def check_kicks():
 
         try:
             LOGGER.info(f"[INFO] Mencoba kick user {user_id} dari chat {chat_id}")
-            await app.ban_chat_member(chat_id, user_id, until_date=0)
+            await app.ban_chat_member(chat_id=int(chat_id), user_id=int(user_id))
             await app.unban_chat_member(chat_id, user_id)
             LOGGER.info(f"[INFO] Berhasil kick user {user_id} dari chat {chat_id}")
         except Exception as e:
