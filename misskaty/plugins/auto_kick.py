@@ -13,7 +13,7 @@ DEFAULT_KICK_TIME_MINUTES = int(os.getenv("DEFAULT_KICK_TIME_HOURS", "1"))
 
 @app.on_cmd(["autokick"], self_admin=True, group_only=True)
 @app.adminsOnly("can_restrict_members")
-#@use_chat_lang()
+@use_chat_lang()
 async def AutoKick(client: Client, ctx: Message, strings) -> "Message":
     args = ctx.text.split()[1:]
 
