@@ -31,7 +31,7 @@ async def handle_autokick(client: Client, ctx: Message, strings) -> "Message":
     identifier = args[1] if len(args) > 1 else None
     if subcommand not in ["cancel", "check"]:
         identifier = subcommand
-        time_args = args[1]
+        time_args = args[1] if len(args) > 1 else None
 
     target_user: User = None
     if ctx.reply_to_message and ctx.reply_to_message.from_user:
