@@ -9,6 +9,11 @@ from misskaty.helper.localization import use_chat_lang
 from pyrogram.errors import PeerIdInvalid
 from logging import getLogger
 from misskaty.vars import SUDO
+from misskaty.core.decorator.permissions import (
+    admins_in_chat,
+    list_admins,
+    member_permissions,
+)
 LOGGER = getLogger("MissKaty")
 kickdb = dbname["auto_kick"]
 DEFAULT_KICK_TIME_MINUTES = int(os.getenv("DEFAULT_KICK_TIME_HOURS", "1"))
@@ -43,6 +48,13 @@ async def handle_autokick(client: Client, ctx: Message, strings) -> "Message":
             return await ctx.reply(f"❌ Tidak bisa menemukan user dari input {identifier}, coba dengan mereply pesan dari user diikuti dengan waktu.")
     else:
         return await ctx.reply("❌ Harap reply ke user atau beri user_id/username.")
+
+    if target_user.id == client.me.id:
+        return await ctx.reply("Saya tidak bisa set autokick untuk diri sendiri -_-")
+    elif target_user.id in SUDO:
+        return await ctx.reply("Saya tidak bisa autokick Owner saya hehe")
+    elif target_user.id in (await list_admins(ctx.chat.id)):
+        return await ctx.reply("Saya tidak bisa autokick Admin di grup ini, baka !")
 
     if subcommand == "cancel":
         result = await kickdb.delete_one({
