@@ -73,6 +73,9 @@ async def start_bot():
     except Exception as e:
         LOGGER.error(str(e))
     scheduler.start()
+    from misskaty.plugins.auto_kick import check_kicks
+    scheduler.add_job(check_kicks, "interval", seconds=30)
+    LOGGER.info("[INFO]: Add Jobs Check Kick")
     if "web" not in await dbname.list_collection_names():
         webdb = dbname["web"]
         for key, value in web.items():
