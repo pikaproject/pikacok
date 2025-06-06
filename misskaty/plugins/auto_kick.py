@@ -114,7 +114,7 @@ async def check_kicks():
         try:
             await app.ban_chat_member(chat_id=int(chat_id), user_id=int(user_id))
             await app.unban_chat_member(chat_id, user_id)
-            app.send_message(int(chat_id), f"User {user_id} berhasil dikick oleh auto kick.",)
+            app.send_message(chat_id=int(chat_id), text=f"User {user_id} berhasil dikick oleh auto kick.",)
             LOGGER.info(f"[INFO] BERHASIL KICK {user_id} oleh auto kick.")
         except Exception as e:
             LOGGER.info(f"[ERROR] Gagal kick user {user_id} dari chat {chat_id}: {e}")
