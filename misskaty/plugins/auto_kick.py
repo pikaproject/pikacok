@@ -26,9 +26,9 @@ async def handle_autokick(client: Client, ctx: Message) -> "Message":
     if not args and not ctx.reply_to_message:
         return await ctx.reply(
             "Usage:\n"
-            "<code>/autokick {id|@username} {waktu}</code> → atur autokick\n"
-            "<code>/autokick cancel {id|@username} → batalkan autokick\n"
-            "<code>/autokick check {id|@username} → cek sisa waktu autokick\n\n"
+            "<code>/autokick {id|@username} {waktu}</code> → atur autokick\n\n"
+            "<code>/autokick cancel {id|@username}</code> → batalkan autokick\n\n"
+            "<code>/autokick check {id|@username}</code> → cek sisa waktu autokick\n\n"
             "Atau bisa dengan reply user dengan perintah."
         )
 
