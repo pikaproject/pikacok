@@ -45,7 +45,7 @@ async def handle_autokick(client: Client, ctx: Message, strings) -> "Message":
         try:
             target_user = await app.get_users(int(identifier) if identifier.isdigit() else identifier)
         except Exception:
-            return await ctx.reply(f"❌ Tidak bisa menemukan user dari input {identifier}, coba dengan mereply pesan dari user diikuti dengan waktu.")
+            return await ctx.reply(f"❌ Tidak bisa menemukan user dari input (<code>{identifier}</code>), coba dengan mereply pesan dari user diikuti dengan waktu.")
     else:
         return await ctx.reply("❌ Harap reply ke user atau beri user_id/username.")
 
