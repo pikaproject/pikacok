@@ -61,7 +61,11 @@ async def handle_autokick(client: Client, ctx: Message, strings) -> "Message":
         })
 
         if doc:
-            remaining = doc["kick_time"] - datetime.now(timezone.utc)
+            kick_time = doc["kick_time"]
+            if kick_time.tzinfo is None:
+                kick_time = kick_time.replace(tzinfo=timezone.utc)
+
+            remaining = kick_time - datetime.now(timezone.utc)
             total_minutes = int(remaining.total_seconds() // 60)
             hours, minutes = divmod(total_minutes, 60)
 
