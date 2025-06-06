@@ -11,7 +11,7 @@ from logging import getLogger
 from misskaty.vars import SUDO
 LOGGER = getLogger("MissKaty")
 kickdb = dbname["auto_kick"]
-DEFAULT_KICK_TIME_MINUTES = int(os.getenv("DEFAULT_KICK_TIME_HOURS", "1"))
+DEFAULT_KICK_TIME = "30d"
 
 @app.on_cmd(["autokick"], self_admin=True, group_only=True)
 @app.adminsOnly("can_restrict_members")
@@ -32,13 +32,16 @@ async def handle_autokick(client: Client, ctx: Message, strings) -> "Message":
     target_user: User = None
     if ctx.reply_to_message and ctx.reply_to_message.from_user:
         target_user = ctx.reply_to_message.from_user
-    elif identifier:
-        try:
-            target_user = await app.get_users(int(identifier) if identifier.isdigit() else identifier)
-        except Exception:
-            return await ctx.reply(f"❌ Tidak bisa menemukan user dari input ({identifier}), coba dengan mereply pesan dari user.")
+        time_arg = args[0] if args else None
     else:
-        return await ctx.reply("❌ Harap reply ke user atau beri user_id/username.")
+        if not args:
+            return await ctx.reply("❌ Format salah. Gunakan `/autokick @user 5m` atau reply.")
+        identifier = args[0]
+        try:
+            target_user = await app.get_users(int(identifier)) if identifier.isdigit() else await app.get_users(identifier)
+        except Exception:
+            return await ctx.reply("❌ Tidak bisa menemukan user.")
+        time_arg = args[1] if len(args) > 1 else None
 
     if subcommand == "cancel":
         result = await kickdb.delete_one({
@@ -83,10 +86,14 @@ async def handle_autokick(client: Client, ctx: Message, strings) -> "Message":
             )
 
     else:
-        try:
-            kick_time = parse_time_string(subcommand)
-        except ValueError as e:
-            return await ctx.reply(f"❌ {e}")
+        if time_arg:
+            try:
+                kick_time = parse_time_string(time_arg)
+            except ValueError as e:
+                return await ctx.reply(f"❌ {e}")
+        else:
+            kick_time = DEFAULT_KICK_TIME
+
         kick_datetime = datetime.now(timezone.utc) + timedelta(minutes=kick_time)
 
         await kickdb.insert_one({
