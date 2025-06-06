@@ -41,6 +41,9 @@ async def handle_autokick(client: Client, ctx: Message) -> "Message":
     target_user: User = None
     if ctx.reply_to_message and ctx.reply_to_message.from_user:
         target_user = ctx.reply_to_message.from_user
+        if not args:
+            return await ctx.reply("❌ Harap masukkan waktu autokick, atau subcommand check/cancel")
+
     elif identifier:
         try:
             target_user = await app.get_users(int(identifier) if identifier.isdigit() else identifier)
