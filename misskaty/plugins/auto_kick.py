@@ -47,7 +47,7 @@ async def AutoKick(client: Client, ctx: Message, strings) -> "Message":
 
     kick_datetime = datetime.now(timezone.utc) + timedelta(minutes=kick_time)
 
-    kickdb.insert_one({
+    await kickdb.insert_one({
         "chat_id": ctx.chat.id,
         "user_id": target_user.id,
         "kick_time": kick_datetime,
@@ -72,7 +72,10 @@ async def check_kicks():
         try:
             await app.kick_chat_member(chat_id, user_id)
             await app.unban_chat_member(chat_id, user_id)
+            print(f"[INFO] Berhasil kick {user_id} dari {chat_id}")
         except Exception as e:
             print(f"[ERROR] Gagal kick {user_id} dari {chat_id}: {e}")
         finally:
             kickdb.delete_one({"_id": kick["_id"]})
+    if not kicks:
+        print("[INFO] Tidak ada kick yang harus dilakukan.")
