@@ -20,16 +20,16 @@ DEFAULT_KICK_TIME_MINUTES = int(os.getenv("DEFAULT_KICK_TIME_HOURS", "1"))
 
 @app.on_cmd(["autokick"], self_admin=True, group_only=True)
 @app.adminsOnly("can_restrict_members")
-@use_chat_lang()
-async def handle_autokick(client: Client, ctx: Message, strings) -> "Message":
+async def handle_autokick(client: Client, ctx: Message) -> "Message":
     args = ctx.text.split()[1:]
     time_args = None
     if not args and not ctx.reply_to_message:
         return await ctx.reply(
             "Usage:\n"
-            "`/autokick <id|@username> <waktu>` atau reply  → atur autokick\n"
-            "`/autokick cancel <id|@username>` atau reply → batalkan autokick\n"
-            "`/autokick check <id|@username>` atau reply → cek sisa waktu autokick"
+            "<code>/autokick {id|@username} {waktu}</code> → atur autokick\n"
+            "<code>/autokick cancel {id|@username} → batalkan autokick\n"
+            "<code>/autokick check {id|@username} → cek sisa waktu autokick\n\n"
+            "Atau bisa dengan reply user dengan perintah."
         )
 
     subcommand = args[0].lower() if args else None

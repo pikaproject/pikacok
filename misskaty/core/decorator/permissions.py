@@ -97,6 +97,14 @@ admins_in_chat = Cache(filename="admin_cache.db", path="cache", in_memory=False)
 
 
 async def list_admins(chat_id: int):
+    """Gets a list of admin IDs in a chat. Caches the result for 6 hours.
+    
+    Args:
+        chat_id (int): The ID of the chat to query.
+    
+    Returns:
+        List[int]: A list of admin IDs, or None if the chat is private.
+    """
     if chat_id in admins_in_chat:
         interval = time() - admins_in_chat[chat_id]["last_updated_at"]
         if interval < 3600:
