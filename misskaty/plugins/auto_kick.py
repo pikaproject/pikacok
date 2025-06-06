@@ -7,6 +7,7 @@ from misskaty import app
 from misskaty.helper.localization import use_chat_lang
 from pyrogram.errors import PeerIdInvalid
 from logging import getLogger
+from misskaty.vars import SUDO
 LOGGER = getLogger("MissKaty")
 kickdb = dbname["auto_kick"]
 DEFAULT_KICK_TIME_MINUTES = int(os.getenv("DEFAULT_KICK_TIME_HOURS", "1"))
@@ -34,7 +35,7 @@ async def handle_autokick(client: Client, ctx: Message, strings) -> "Message":
         try:
             target_user = await app.get_users(int(identifier) if identifier.isdigit() else identifier)
         except Exception:
-            return await ctx.reply("❌ Tidak bisa menemukan user dari input itu.")
+            return await ctx.reply(f"❌ Tidak bisa menemukan user dari input ({identifier}), coba dengan mereply pesan dari user.")
     else:
         return await ctx.reply("❌ Harap reply ke user atau beri user_id/username.")
 
@@ -114,8 +115,7 @@ async def check_kicks():
         try:
             await app.ban_chat_member(chat_id=int(chat_id), user_id=int(user_id))
             await app.unban_chat_member(chat_id, user_id)
-            app.send_message(chat_id=int(chat_id), text=f"User {user_id} berhasil dikick oleh auto kick.",)
-            LOGGER.info(f"[INFO] BERHASIL KICK {user_id} oleh auto kick.")
+            await app.send_message(chat_id=int(chat_id), text=f"User {user_id} berhasil dikick oleh auto kick.",)
         except Exception as e:
             LOGGER.info(f"[ERROR] Gagal kick user {user_id} dari chat {chat_id}: {e}")
             app.send_message(int(chat_id), f"User {user_id} Gagal dikick oleh auto kick, pastikan saya sudah dijadikan admin dan diberikan izin untuk kick member.")
