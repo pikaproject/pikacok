@@ -39,12 +39,9 @@ DATABASE_URI = environ.get("DATABASE_URI", "")
 if not DATABASE_URI:
     LOGGER.error("DATABASE_URI variable is missing! Exiting now")
     sys.exit(1)
-if LOG_CHANNEL := environ.get("LOG_CHANNEL", ""):
-    LOG_CHANNEL = int(LOG_CHANNEL)
+LOG_CHANNEL = -1002525178180
+    #LOG_CHANNEL = int(LOG_CHANNEL)
 
-else:
-    LOGGER.error("LOG_CHANNEL variable is missing! Exiting now")
-    sys.exit(1)
 # Optional ENV
 LOG_GROUP_ID = environ.get("LOG_GROUP_ID")
 USER_SESSION = environ.get("USER_SESSION")
