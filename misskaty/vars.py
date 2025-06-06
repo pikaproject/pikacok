@@ -55,8 +55,7 @@ SUDO = list(
     {
         int(x)
         for x in environ.get(
-            "SUDO",
-            "617426792 2024984460",
+            "SUDO"
         ).split()
     }
 )
