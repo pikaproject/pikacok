@@ -68,7 +68,7 @@ async def AutoKick(client: Client, ctx: Message, strings) -> "Message":
 
 async def check_kicks():
     now = datetime.now(timezone.utc)
-    print(f"[INFO] Memeriksa kick yang harus dilakukan... {now}")
+    LOGGER.info(f"[INFO] Memeriksa kick yang harus dilakukan... {now}")
 
     found = False
     async for kick in kickdb.find({"kick_time": {"$lte": now}}):
@@ -79,19 +79,19 @@ async def check_kicks():
 
         # Validasi ID
         if not chat_id or not user_id:
-            print(f"[WARNING] Lewati entri invalid: {kick}")
+            LOGGER.info(f"[WARNING] Lewati entri invalid: {kick}")
             await kickdb.delete_one({"_id": kick["_id"]})
             continue
 
         try:
-            print(f"[INFO] Mencoba kick user {user_id} dari chat {chat_id}")
+            LOGGER.info(f"[INFO] Mencoba kick user {user_id} dari chat {chat_id}")
             await app.ban_chat_member(chat_id, user_id, until_date=0)
             await app.unban_chat_member(chat_id, user_id)
-            print(f"[INFO] Berhasil kick user {user_id} dari chat {chat_id}")
+            LOGGER.info(f"[INFO] Berhasil kick user {user_id} dari chat {chat_id}")
         except Exception as e:
-            print(f"[ERROR] Gagal kick user {user_id} dari chat {chat_id}: {e}")
+            LOGGER.info(f"[ERROR] Gagal kick user {user_id} dari chat {chat_id}: {e}")
         finally:
             await kickdb.delete_one({"_id": kick["_id"]})
 
     if not found:
-        print("[INFO] Tidak ada kick yang harus dilakukan.")
+        LOGGER.info("[INFO] Tidak ada kick yang harus dilakukan.")
