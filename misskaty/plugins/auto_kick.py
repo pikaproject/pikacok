@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from pyrogram import Client, filters
 from pyrogram.types import *
@@ -83,10 +84,9 @@ async def handle_autokick(client: Client, ctx: Message, strings) -> "Message":
 
     else:
         try:
-            kick_time = int(subcommand) if subcommand and subcommand.isdigit() else DEFAULT_KICK_TIME_MINUTES
-        except ValueError:
-            return await ctx.reply("❌ Masukkan waktu dalam menit, atau gunakan `cancel` / `check`.")
-
+            kick_time = parse_time_string(subcommand)
+        except ValueError as e:
+            return await ctx.reply(f"❌ {e}")
         kick_datetime = datetime.now(timezone.utc) + timedelta(minutes=kick_time)
 
         await kickdb.insert_one({
@@ -99,6 +99,22 @@ async def handle_autokick(client: Client, ctx: Message, strings) -> "Message":
             f"✅ [{target_user.first_name}](tg://user?id={target_user.id}) akan dikick dalam `{kick_time}` menit.",
             disable_web_page_preview=True
         )
+
+def parse_time_string(s: str) -> int:
+    """Ubah string seperti '1d2h30m' jadi total menit (int)."""
+    pattern = re.compile(r'(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?')
+    match = pattern.fullmatch(s.strip().lower())
+    if not match:
+        raise ValueError("Format waktu tidak valid. Gunakan format seperti contoh 1d atau 1d30h atau 30m.")
+    days, hours, minutes = match.groups()
+    total_minutes = (
+        (int(days) * 1440 if days else 0) +
+        (int(hours) * 60 if hours else 0) +
+        (int(minutes) if minutes else 0)
+    )
+    if total_minutes == 0:
+        raise ValueError("Waktu tidak boleh 0.")
+    return total_minutes
 
 async def check_kicks():
     now = datetime.now(timezone.utc)
