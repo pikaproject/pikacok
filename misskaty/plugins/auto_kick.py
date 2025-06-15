@@ -14,12 +14,13 @@ from misskaty.core.decorator.permissions import (
     list_admins,
     member_permissions,
 )
+from misskaty.vars import COMMAND_HANDLER
 LOGGER = getLogger("MissKaty")
 kickdb = dbname["auto_kick"]
 DEFAULT_KICK_TIME_MINUTES = int(os.getenv("DEFAULT_KICK_TIME_HOURS", "1"))
 
-@app.on_cmd(["autokick"])
-@app.adminsOnly("can_restrict_members")
+@app.on_message(filters.command(["autokick"], COMMAND_HANDLER))
+#@app.adminsOnly("can_restrict_members")
 async def handle_autokick(client: Client, ctx: Message) -> "Message":
     chat_type = ctx.chat.type.value
     if chat_type == "private":
