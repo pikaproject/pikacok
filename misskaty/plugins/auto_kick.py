@@ -20,9 +20,11 @@ kickdb = dbname["auto_kick"]
 DEFAULT_KICK_TIME_MINUTES = int(os.getenv("DEFAULT_KICK_TIME_HOURS", "1"))
 
 @app.on_message(filters.command(["autokick"], COMMAND_HANDLER))
-@app.adminsOnly("can_restrict_members")
+#@app.adminsOnly("can_restrict_members")
 async def handle_autokick(client: Client, ctx: Message) -> "Message":
     chat_type = ctx.chat.type.value
+    if not await admins_in_chat(ctx):
+        return await ctx.reply("❌ Anda tidak memiliki izin untuk menggunakan perintah ini.")
     if chat_type == "private":
         return await ctx.reply("Perintah ini hanya bisa digunakan di grup atau channel.")
     args = ctx.text.split()[1:]
