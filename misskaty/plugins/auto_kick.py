@@ -18,9 +18,12 @@ LOGGER = getLogger("MissKaty")
 kickdb = dbname["auto_kick"]
 DEFAULT_KICK_TIME_MINUTES = int(os.getenv("DEFAULT_KICK_TIME_HOURS", "1"))
 
-@app.on_cmd(["autokick"], self_admin=True, group_only=True)
+@app.on_cmd(["autokick"], self_admin=True)
 @app.adminsOnly("can_restrict_members")
 async def handle_autokick(client: Client, ctx: Message) -> "Message":
+    chat_type = ctx.chat.type.value
+    if chat_type == "private":
+        return await ctx.reply("Perintah ini hanya bisa digunakan di grup atau channel.")
     args = ctx.text.split()[1:]
     time_args = None
     if not args and not ctx.reply_to_message:
