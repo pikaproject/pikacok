@@ -158,12 +158,14 @@ async def check_kicks():
             await kickdb.delete_one({"_id": kick["_id"]})
             continue
         try:
+            user = await app.get_users(int(user_id))
+            name = user.first_name
             await app.ban_chat_member(chat_id=int(chat_id), user_id=int(user_id))
             await app.unban_chat_member(chat_id, user_id)
-            await app.send_message(chat_id=int(chat_id), text=f"User {user_id} berhasil dikick oleh auto kick.",)
+            await app.send_message(chat_id=int(chat_id), text=f"User <a href='tg://user?id={user_id}'>{name}</a> berhasil dikick oleh auto kick.",)
         except Exception as e:
             LOGGER.info(f"[ERROR] Gagal kick user {user_id} dari chat {chat_id}: {e}")
-            app.send_message(int(chat_id), f"User {user_id} Gagal dikick oleh auto kick, pastikan saya sudah dijadikan admin dan diberikan izin untuk kick member.")
+            app.send_message(int(chat_id), f"User <a href='tg://user?id={user_id}'>{name}</a> Gagal dikick oleh auto kick, pastikan saya sudah dijadikan admin dan diberikan izin untuk kick member.")
         finally:
             await kickdb.delete_one({"_id": kick["_id"]})
     if not found:
