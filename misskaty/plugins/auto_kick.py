@@ -90,7 +90,7 @@ async def handle_autokick(client: Client, ctx: Message) -> "Message":
             time_str = format_duration(total_minutes)
 
             return await ctx.reply(
-                f"<b>⏳ [{target_user.first_name}](tg://user?id={target_user.id}) akan dikick dalam </b><code>{time_str}</code>.\n",
+                f"<b>⏳ [{target_user.first_name}](tg://user?id={target_user.id}) akan dikick dalam </b>[<code>{time_str}</code>]\n",
                 disable_web_page_preview=True
             )
         else:
@@ -116,7 +116,7 @@ async def handle_autokick(client: Client, ctx: Message) -> "Message":
         })
 
         return await ctx.reply(
-            f"<b>✅ [{target_user.first_name}](tg://user?id={target_user.id}) akan dikick dalam</b> <code>{time_str}</code>",
+            f"<b>✅ [{target_user.first_name}](tg://user?id={target_user.id}) akan dikick dalam:</b> [<code>{time_str}</code>]",
             disable_web_page_preview=True
         )
 
@@ -141,11 +141,11 @@ def format_duration(total_minutes: int) -> str:
 
     parts = []
     if days > 0:
-        parts.append(f"{days} hari")
+        parts.append(f"{days}hari")
     if hours > 0:
-        parts.append(f"{hours} jam")
+        parts.append(f"{hours}jam")
     if minutes > 0 or not parts:
-        parts.append(f"{minutes} menit")
+        parts.append(f"{minutes}menit")
 
     return " ".join(parts)
 
