@@ -31,6 +31,7 @@ from misskaty.vars import SUDO, USER_SESSION
 from utils import auto_clean
 from apscheduler.triggers.interval import IntervalTrigger
 from datetime import datetime, timedelta
+from misskaty.plugins.auto_kick import check_kicks
 
 LOGGER = getLogger("MissKaty")
 
@@ -74,11 +75,9 @@ async def start_bot():
                 )
     except Exception as e:
         LOGGER.error(str(e))
-    scheduler.start()
-    from misskaty.plugins.auto_kick import check_kicks
     scheduler.add_job(
         check_kicks,
-        trigger=IntervalTrigger(minutes=60),
+        trigger=IntervalTrigger(minutes=120),
         id="0",
         name="Check AutoKicks",
         misfire_grace_time=15,
@@ -87,6 +86,7 @@ async def start_bot():
         replace_existing=True,
     )
     LOGGER.info("[INFO]: Add Jobs Check Kick")
+    scheduler.start()
     if "web" not in await dbname.list_collection_names():
         webdb = dbname["web"]
         for key, value in web.items():
