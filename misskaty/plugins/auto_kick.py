@@ -99,6 +99,15 @@ async def handle_autokick(client: Client, ctx: Message) -> "Message":
                 disable_web_page_preview=True
             )
     else:
+        existing = await kickdb.find_one({
+            "chat_id": ctx.chat.id,
+            "user_id": target_user.id
+        })
+        if existing:
+            return await ctx.reply(
+                f"<b>⚠️ User [{target_user.first_name}](tg://user?id={target_user.id}) sudah memiliki jadwal autokick, silahkan batalkan jadwal yang sebelumnya sebelum mengatur jadwal baru.</b>",
+                disable_web_page_preview=True
+            )
         try:
             if time_args:
                 kick_time = parse_time_string(time_args)
