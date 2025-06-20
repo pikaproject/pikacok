@@ -1,26 +1,18 @@
-import os
 import re
 from datetime import datetime, timedelta, timezone
 from pyrogram import Client, filters
 from pyrogram.types import *
 from database import dbname
 from misskaty import app
-from misskaty.helper.localization import use_chat_lang
-from pyrogram.errors import PeerIdInvalid
 from logging import getLogger
 from misskaty.vars import SUDO
-from misskaty.core.decorator.permissions import (
-    admins_in_chat,
-    list_admins,
-    member_permissions,
-)
+from misskaty.core.decorator.permissions import list_admins
 from misskaty.vars import COMMAND_HANDLER
+
 LOGGER = getLogger("MissKaty")
 kickdb = dbname["auto_kick"]
-DEFAULT_KICK_TIME_MINUTES = int(os.getenv("DEFAULT_KICK_TIME_HOURS", "1"))
 
 @app.on_message(filters.command(["autokick"], COMMAND_HANDLER))
-#@app.adminsOnly("can_restrict_members")
 async def handle_autokick(client: Client, ctx: Message) -> "Message":
     chat_type = ctx.chat.type.value
     if ctx.from_user.id not in (await list_admins(ctx.chat.id)):
@@ -52,6 +44,7 @@ async def handle_autokick(client: Client, ctx: Message) -> "Message":
 
     elif identifier:
         try:
+            target_user = str(identifier)
             target_user = await app.get_users(int(identifier) if identifier.isdigit() else identifier)
         except Exception:
             return await ctx.reply(f"❌ Tidak bisa menemukan user dari input (<code>{identifier}</code>), coba dengan mereply pesan dari user diikuti dengan waktu.")
@@ -94,11 +87,10 @@ async def handle_autokick(client: Client, ctx: Message) -> "Message":
 
             remaining = kick_time - datetime.now(timezone.utc)
             total_minutes = int(remaining.total_seconds() // 60)
-            hours, minutes = divmod(total_minutes, 60)
+            time_str = format_duration(total_minutes)
 
-            time_str = f"{hours} jam {minutes} menit" if hours else f"{minutes} menit"
             return await ctx.reply(
-                f"⏳ [{target_user.first_name}](tg://user?id={target_user.id}) akan dikick dalam {time_str}.",
+                f"<b>⏳ [{target_user.first_name}](tg://user?id={target_user.id}) akan dikick dalam </b><code>{time_str}</code>.\n",
                 disable_web_page_preview=True
             )
         else:
@@ -106,7 +98,6 @@ async def handle_autokick(client: Client, ctx: Message) -> "Message":
                 f"✅ Tidak ada jadwal autokick untuk [{target_user.first_name}](tg://user?id={target_user.id}).",
                 disable_web_page_preview=True
             )
-
     else:
         try:
             if time_args:
@@ -115,8 +106,8 @@ async def handle_autokick(client: Client, ctx: Message) -> "Message":
                 kick_time = parse_time_string(subcommand)
         except ValueError as e:
             return await ctx.reply(f"❌ {e}")
-
         kick_datetime = datetime.now(timezone.utc) + timedelta(minutes=kick_time)
+        time_str = format_duration(kick_time)
 
         await kickdb.insert_one({
             "chat_id": ctx.chat.id,
@@ -125,12 +116,11 @@ async def handle_autokick(client: Client, ctx: Message) -> "Message":
         })
 
         return await ctx.reply(
-            f"✅ [{target_user.first_name}](tg://user?id={target_user.id}) akan dikick dalam `{kick_time}` menit.",
+            f"<b>✅ [{target_user.first_name}](tg://user?id={target_user.id}) akan dikick dalam</b> <code>{time_str}</code>",
             disable_web_page_preview=True
         )
 
 def parse_time_string(s: str) -> int:
-    """Ubah string seperti '1d2h30m' jadi total menit (int)."""
     pattern = re.compile(r'(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?')
     match = pattern.fullmatch(s.strip().lower())
     if not match:
@@ -145,7 +135,22 @@ def parse_time_string(s: str) -> int:
         raise ValueError("Waktu tidak boleh 0.")
     return total_minutes
 
+def format_duration(total_minutes: int) -> str:
+    days, remainder_minutes = divmod(total_minutes, 1440)
+    hours, minutes = divmod(remainder_minutes, 60)
+
+    parts = []
+    if days > 0:
+        parts.append(f"{days} hari")
+    if hours > 0:
+        parts.append(f"{hours} jam")
+    if minutes > 0 or not parts:
+        parts.append(f"{minutes} menit")
+
+    return " ".join(parts)
+
 async def check_kicks():
+    #Jalankan dengan scheduler
     now = datetime.now(timezone.utc)
     LOGGER.info(f"[INFO] Memeriksa kick yang harus dilakukan... {now}")
     found = False
