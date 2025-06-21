@@ -35,6 +35,8 @@ def parse_buttons_layout(text):
 async def post_with_buttons(client, message):
     replied = message.reply_to_message
 
+    if not replied:
+        return await message.reply("⚠️ Kamu harus membalas pesan yang ingin diposting ke channel, disertai dengan target channel", quote=True)
     if len(message.command) < 2:
         return await message.reply("⚠️ Kamu harus menyertakan target channel.\nContoh: `/post @namachannel` atau `/post -10012345`", quote=True)
 
@@ -46,10 +48,8 @@ async def post_with_buttons(client, message):
 
     try:
         await client.get_chat(target_channel)
-    except PeerIdInvalid:
-        return await message.reply("⚠️ Channel tidak ditemukan atau tidak valid, pastikan bot sudah dijadikan admin di channel tersebut", quote=True)
-    except Exception as e:
-        return await message.reply(f"⚠️ Terjadi kesalahan saat mengakses channel: {str(e)}", quote=True)
+    except:
+        return await message.reply(f"⚠️ Channel tidak ditemukan atau tidak valid, pastikan bot sudah dijadikan admin di channel tersebut", quote=True)
     
     if not await is_authorized_user(target_channel, message.from_user.id):
         return await message.reply("⚠️ Kamu tidak memiliki izin untuk mengirim pesan ke channel ini.", quote=True)
