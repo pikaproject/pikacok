@@ -36,7 +36,7 @@ def parse_buttons_layout(text):
 async def post_with_buttons(client, message):
     replied = message.reply_to_message
 
-    if len(message.command) < 2:
+    if len(message.command) < 1:
         return await message.reply("⚠️ Kamu harus menyertakan target channel.\nContoh: `/post @namachannel` atau `/post -10012345`", quote=True)
 
     target_channel = message.command[1]
@@ -55,9 +55,9 @@ async def post_with_buttons(client, message):
         return await message.reply(f"⚠️ Terjadi kesalahan saat mengakses channel: {str(e)}", quote=True)
 
     html_text = replied.caption if replied and replied.caption else replied.text if replied else ""
-    command_text = message.text or message.caption or ""
+    #command_text = message.text or message.caption or ""
 
-    full_text = (html_text or "") + "\n" + command_text
+    full_text = (html_text or "") + "\n"
     cleaned_html, keyboard = parse_buttons_layout(full_text)
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
 
