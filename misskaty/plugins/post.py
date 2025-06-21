@@ -8,8 +8,6 @@ from misskaty.core.decorator.errors import capture_err
 from misskaty.vars import COMMAND_HANDLER
 from pyrogram.enums import ParseMode
 
-TARGET_CHANNEL = -1002688639436
-
 def parse_buttons_layout(text):
     pattern = re.compile(r"\[([^\]]+)\]\((https?://[^\)]+)\)")
     buttons_layout = []
@@ -31,16 +29,18 @@ def parse_buttons_layout(text):
 @app.on_message(filters.command(["post"], COMMAND_HANDLER) & filters.reply)
 async def post_with_buttons(client, message):
     replied = message.reply_to_message
-    if not replied:
-        await message.reply("Harus reply ke pesan berisi teks atau media.")
-        return
-    
-    html_text = replied.caption if replied.caption else replied.text
-    if not html_text:
-        await message.reply("Pesan tidak berisi teks/caption.")
-        return
 
-    cleaned_html, keyboard = parse_buttons_layout(html_text)
+    if len(message.command) < 2:
+        return await message.reply("⚠️ Kamu harus menyertakan target channel.\nContoh: `/post @namachannel`", quote=True)
+
+    target_channel = message.command[1]
+    if not target_channel.startswith("@") and not target_channel.startswith("-100"):
+        return await message.reply("⚠️ Format channel tidak valid. Gunakan `@username` atau `-100...`", quote=True)
+    html_text = replied.caption if replied and replied.caption else replied.text if replied else ""
+    command_text = message.text or message.caption or ""
+
+    full_text = (html_text or "") + "\n" + command_text
+    cleaned_html, keyboard = parse_buttons_layout(full_text)
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
 
     if reply_markup and not cleaned_html.strip() and not (
@@ -56,7 +56,7 @@ async def post_with_buttons(client, message):
 
     if replied.photo:
         await client.send_photo(
-            chat_id=TARGET_CHANNEL,
+            chat_id=target_channel,
             photo=replied.photo.file_id,
             caption=cleaned_html,
             parse_mode=ParseMode.HTML,
@@ -64,7 +64,7 @@ async def post_with_buttons(client, message):
         )
     elif replied.video:
         await client.send_video(
-            chat_id=TARGET_CHANNEL,
+            chat_id=target_channel,
             video=replied.video.file_id,
             caption=cleaned_html,
             parse_mode=ParseMode.HTML,
@@ -72,7 +72,7 @@ async def post_with_buttons(client, message):
         )
     elif replied.document:
         await client.send_document(
-            chat_id=TARGET_CHANNEL,
+            chat_id=target_channel,
             document=replied.document.file_id,
             caption=cleaned_html,
             parse_mode=ParseMode.HTML,
@@ -80,7 +80,7 @@ async def post_with_buttons(client, message):
         )
     elif replied.audio:
         await client.send_audio(
-            chat_id=TARGET_CHANNEL,
+            chat_id=target_channel,
             audio=replied.audio.file_id,
             caption=cleaned_html,
             parse_mode=ParseMode.HTML,
@@ -88,7 +88,7 @@ async def post_with_buttons(client, message):
         )
     else:
         await client.send_message(
-            chat_id=TARGET_CHANNEL,
+            chat_id=target_channel,
             text=cleaned_html,
             parse_mode=ParseMode.HTML,
             reply_markup=reply_markup
