@@ -43,7 +43,12 @@ async def post_with_buttons(client, message):
     cleaned_html, keyboard = parse_buttons_layout(html_text)
     reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
 
-    if reply_markup and not cleaned_html.strip():
+    if reply_markup and not cleaned_html.strip() and not (
+        replied and (replied.photo 
+                     or replied.video 
+                     or replied.document 
+                     or replied.audio)
+                    ):
         return await message.reply(
             "⚠️ Tidak ada teks atau media dalam pesan yang di-reply.\n"
             "Telegram tidak mengizinkan pesan yang hanya berisi tombol."
