@@ -1,6 +1,6 @@
 import re
 from pyrogram import enums, filters
-from pyrogram.errors import UserIsBlocked, UserNotParticipant
+from pyrogram.errors import UserIsBlocked, UserNotParticipant, PeerIdInvalid
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from misskaty import BOT_USERNAME, app
@@ -34,8 +34,18 @@ async def post_with_buttons(client, message):
         return await message.reply("⚠️ Kamu harus menyertakan target channel.\nContoh: `/post @namachannel`", quote=True)
 
     target_channel = message.command[1]
-    if not target_channel.startswith("@") and not target_channel.startswith("-100"):
+    if not target_channel.startswith("@") and not target_channel.startswith("-"):
         return await message.reply("⚠️ Format channel tidak valid. Gunakan `@username` atau `-100...`", quote=True)
+    if target_channel.startswith("-"):
+        try:
+            await client.get_chat(target_channel)
+        except PeerIdInvalid:
+            return await message.reply("❌ ID channel tidak valid atau tidak ditemukan", quote=True)
+        except:
+            return await message.reply(
+                f"❌ Gagal mengakses {target_channel}. Pastikan bot sudah jadi admin di sana.", quote=True
+        )
+
     html_text = replied.caption if replied and replied.caption else replied.text if replied else ""
     command_text = message.text or message.caption or ""
 
