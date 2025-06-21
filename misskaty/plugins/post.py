@@ -1,12 +1,18 @@
 import re
 from pyrogram import enums, filters
-from pyrogram.errors import UserIsBlocked, UserNotParticipant, PeerIdInvalid
+from pyrogram.errors import PeerIdInvalid
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-from misskaty import BOT_USERNAME, app
-from misskaty.core.decorator.errors import capture_err
+from misskaty import app
 from misskaty.vars import COMMAND_HANDLER
 from pyrogram.enums import ParseMode
+
+async def is_authorized_user(channel_id, user_id):
+    try:
+        member = await app.get_chat_member(channel_id, user_id)
+        return member.status in [enums.ChatMemberStatus.ADMINISTRATOR, enums.ChatMemberStatus.OWNER]
+    except:
+        return False
 
 def parse_buttons_layout(text):
     pattern = re.compile(r"\[([^\]]+)\]\((https?://[^\)]+)\)")
@@ -31,13 +37,16 @@ async def post_with_buttons(client, message):
     replied = message.reply_to_message
 
     if len(message.command) < 2:
-        return await message.reply("⚠️ Kamu harus menyertakan target channel.\nContoh: `/post @namachannel`", quote=True)
+        return await message.reply("⚠️ Kamu harus menyertakan target channel.\nContoh: `/post @namachannel` atau `/post -10012345`", quote=True)
 
     target_channel = message.command[1]
     if not target_channel.startswith("@") and not target_channel.startswith("-"):
         return await message.reply("⚠️ Format channel tidak valid. Gunakan `@username` atau `-100...`", quote=True)
     if not target_channel.startswith("@") and target_channel.startswith("-"):
         target_channel = int(target_channel)
+    if not await is_authorized_user(target_channel, message.from_user.id):
+        return await message.reply("⚠️ Kamu tidak memiliki izin untuk mengirim pesan ke channel ini.", quote=True)
+       
     try:
         await client.get_chat(target_channel)
     except PeerIdInvalid:
@@ -60,7 +69,7 @@ async def post_with_buttons(client, message):
                     ):
         return await message.reply(
             "⚠️ Tidak ada teks atau media dalam pesan yang di-reply.\n"
-            "Telegram tidak mengizinkan pesan yang hanya berisi tombol."
+            "Telegram tidak mengizinkan pesan yang hanya berisi tomboltanpa text atau media."
         )
 
     if replied.photo:
@@ -103,5 +112,5 @@ async def post_with_buttons(client, message):
             reply_markup=reply_markup
         )
 
-    await message.reply("✅ Dikirim ke channel.")
+    await message.reply("✅ Berhasil kirim pesan ke channel.")
     
