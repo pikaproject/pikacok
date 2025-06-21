@@ -38,13 +38,14 @@ async def post_with_buttons(client, message):
         return await message.reply("⚠️ Format channel tidak valid. Gunakan `@username` atau `-100...`", quote=True)
     if target_channel.startswith("-"):
         try:
-            await client.get_chat(int(target_channel))
+            chat = await client.get_chat(int(target_channel))
         except PeerIdInvalid:
             return await message.reply("❌ ID channel tidak valid atau tidak ditemukan", quote=True)
         except:
             return await message.reply(
                 f"❌ Gagal mengakses {target_channel}. Pastikan bot sudah jadi admin di sana.", quote=True
         )
+        print(chat)
 
     html_text = replied.caption if replied and replied.caption else replied.text if replied else ""
     command_text = message.text or message.caption or ""
