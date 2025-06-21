@@ -115,6 +115,8 @@ async def post_with_buttons(client, message):
             parse_mode=ParseMode.HTML,
             reply_markup=reply_markup
         )
-
-    await message.reply("✅ Berhasil kirim pesan ke channel.")
+    if preview:
+        await message.reply("✅ Ini adalah preview pesan yang akan dipost ke channel")
+    else:
+        await message.reply(f"✅ Berhasil kirim pesan ke channel {target_channel} !.")
     
