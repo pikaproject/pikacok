@@ -31,19 +31,56 @@ def parse_buttons_layout(text):
 @app.on_message(filters.command(["post"], COMMAND_HANDLER) & filters.reply)
 async def post_with_buttons(client, message):
     replied = message.reply_to_message
-    if not replied or not replied.text:
-        await message.reply("Reply ke pesan teks yang pakai tag HTML.")
+    if not replied:
+        await message.reply("Harus reply ke pesan berisi teks atau media.")
+        return
+    html_text = replied.caption if replied.caption else replied.text
+    if not html_text:
+        await message.reply("Pesan tidak berisi teks/caption.")
         return
 
-    html_text = replied.text
     cleaned_html, keyboard = parse_buttons_layout(html_text)
+    reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
 
-    await client.send_message(
-        chat_id=TARGET_CHANNEL,
-        text=cleaned_html or " ",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
-    )
+    if replied.photo:
+        await client.send_photo(
+            chat_id=TARGET_CHANNEL,
+            photo=replied.photo.file_id,
+            caption=cleaned_html,
+            parse_mode=ParseMode.HTML,
+            reply_markup=reply_markup
+        )
+    elif replied.video:
+        await client.send_video(
+            chat_id=TARGET_CHANNEL,
+            video=replied.video.file_id,
+            caption=cleaned_html,
+            parse_mode=ParseMode.HTML,
+            reply_markup=reply_markup
+        )
+    elif replied.document:
+        await client.send_document(
+            chat_id=TARGET_CHANNEL,
+            document=replied.document.file_id,
+            caption=cleaned_html,
+            parse_mode=ParseMode.HTML,
+            reply_markup=reply_markup
+        )
+    elif replied.audio:
+        await client.send_audio(
+            chat_id=TARGET_CHANNEL,
+            audio=replied.audio.file_id,
+            caption=cleaned_html,
+            parse_mode=ParseMode.HTML,
+            reply_markup=reply_markup
+        )
+    else:
+        await client.send_message(
+            chat_id=TARGET_CHANNEL,
+            text=cleaned_html,
+            parse_mode=ParseMode.HTML,
+            reply_markup=reply_markup
+        )
 
-    await message.reply("✅ Dikirim ke channel dengan format HTML.")
+    await message.reply("✅ Dikirim ke channel.")
     
