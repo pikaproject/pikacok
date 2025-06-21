@@ -81,7 +81,7 @@ async def post_with_buttons(client, message):
             chat_id=target_channel,
             photo=replied.photo.file_id,
             caption=caption,
-            caption_entities=replied.caption_entities,
+            parse_mode=ParseMode.HTML,
             reply_markup=reply_markup
         )
     elif replied.video:
@@ -89,7 +89,7 @@ async def post_with_buttons(client, message):
             chat_id=target_channel,
             video=replied.video.file_id,
             caption=caption,
-            caption_entities=replied.caption_entities,
+            parse_mode=ParseMode.HTML,
             reply_markup=reply_markup
         )
     elif replied.document:
@@ -97,7 +97,7 @@ async def post_with_buttons(client, message):
             chat_id=target_channel,
             document=replied.document.file_id,
             caption=caption,
-            caption_entities=replied.caption_entities,
+            parse_mode=ParseMode.HTML,
             reply_markup=reply_markup
         )
     elif replied.audio:
@@ -105,14 +105,14 @@ async def post_with_buttons(client, message):
             chat_id=target_channel,
             audio=replied.audio.file_id,
             caption=caption,
-            caption_entities=replied.caption_entities,
+            parse_mode=ParseMode.HTML,
             reply_markup=reply_markup
         )
     else:
         await client.send_message(
             chat_id=target_channel,
             text=caption,
-            entities=replied.entities,
+            parse_mode=ParseMode.HTML,
             reply_markup=reply_markup
         )
     if preview:
