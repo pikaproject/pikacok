@@ -31,18 +31,19 @@ def parse_buttons_layout(text):
 @app.on_message(filters.command(["post"], COMMAND_HANDLER) & filters.reply)
 async def post_with_buttons(client, message):
     replied = message.reply_to_message
-    original_html = await client.export_message_text(replied.chat.id, replied.id, parse_mode="html")
-    if not original_html:
-        await message.reply("Tidak ada teks yang bisa dikirim.")
+    if not replied or not replied.text:
+        await message.reply("Reply ke pesan teks yang pakai tag HTML.")
         return
-    cleaned_html, keyboard = parse_buttons_layout(original_html)
+
+    html_text = replied.text
+    cleaned_html, keyboard = parse_buttons_layout(html_text)
 
     await client.send_message(
         chat_id=TARGET_CHANNEL,
-        text=cleaned_html,
+        text=cleaned_html or " ",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
     )
 
-    await message.reply("✅ Dikirim ke channel dengan format asli.")
+    await message.reply("✅ Dikirim ke channel dengan format HTML.")
     
