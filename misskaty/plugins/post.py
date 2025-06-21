@@ -6,8 +6,9 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from misskaty import BOT_USERNAME, app
 from misskaty.core.decorator.errors import capture_err
 from misskaty.vars import COMMAND_HANDLER
+from pyrogram.enums import ParseMode
 
-target_channel = -1002688639436
+TARGET_CHANNEL = -1002688639436
 
 def parse_buttons_layout(text):
     pattern = re.compile(r"\[([^\]]+)\]\((https?://[^\)]+)\)")
@@ -30,17 +31,19 @@ def parse_buttons_layout(text):
 @app.on_message(filters.command(["post"], COMMAND_HANDLER) & filters.reply)
 async def post_with_buttons(client, message):
     replied = message.reply_to_message
-    if not replied.text:
-        await message.reply("Reply ke pesan teks yang berisi tombol markdown.")
+    original_html = replied.text_html or replied.caption_html
+    if not original_html:
+        await message.reply("Tidak ada teks yang bisa dikirim.")
         return
 
-    text, keyboard = parse_buttons_layout(replied.text)
+    cleaned_html, keyboard = parse_buttons_layout(original_html)
 
     await client.send_message(
-        chat_id=target_channel,
-        text=text or " ",
+        chat_id=TARGET_CHANNEL,
+        text=cleaned_html,
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
     )
 
-    await message.reply("✅ Pesan berhasil dikirim ke channel.")
+    await message.reply("✅ Dikirim ke channel dengan format asli.")
     
