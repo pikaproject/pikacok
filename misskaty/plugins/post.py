@@ -1,6 +1,5 @@
 import re
 from pyrogram import enums, filters
-from pyrogram.errors import PeerIdInvalid
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from misskaty import app
 from misskaty.vars import COMMAND_HANDLER
@@ -34,6 +33,7 @@ def parse_buttons_layout(text):
 @app.on_message(filters.command(["post"], COMMAND_HANDLER))
 async def post_with_buttons(client, message):
     replied = message.reply_to_message
+    preview = False
 
     if not replied:
         return await message.reply("⚠️ Kamu harus membalas pesan yang ingin diposting ke channel, disertai dengan target channel", quote=True)
@@ -41,19 +41,25 @@ async def post_with_buttons(client, message):
         return await message.reply("⚠️ Kamu harus menyertakan target channel.\nContoh: `/post @namachannel` atau `/post -10012345`", quote=True)
 
     target_channel = message.command[1]
-    if not target_channel.startswith("@") and not target_channel.startswith("-"):
-        return await message.reply("⚠️ Format channel tidak valid. Gunakan `@username` atau `-100...`", quote=True)
-    if not target_channel.startswith("@") and target_channel.startswith("-"):
-        target_channel = int(target_channel)
+    if target_channel == "check":
+        preview = True
 
-    try:
-        await client.get_chat(target_channel)
-    except:
-        return await message.reply(f"⚠️ Channel tidak ditemukan atau tidak valid, pastikan bot sudah dijadikan admin di channel tersebut", quote=True)
-    
-    if not await is_authorized_user(target_channel, message.from_user.id):
-        return await message.reply("⚠️ Kamu tidak memiliki izin untuk mengirim pesan ke channel ini.", quote=True)
+    if not preview:
+        if not target_channel.startswith("@") and not target_channel.startswith("-100"):
+            return await message.reply("⚠️ Format channel tidak valid. Gunakan `@username` atau `-100...`", quote=True)
+        if not target_channel.startswith("@") and target_channel.startswith("-100"):
+            target_channel = int(target_channel)
 
+        try:
+            await client.get_chat(target_channel)
+        except:
+            return await message.reply(f"⚠️ Channel tidak ditemukan atau tidak valid, pastikan bot sudah dijadikan admin di channel tersebut", quote=True)
+        
+        if not await is_authorized_user(target_channel, message.from_user.id):
+            return await message.reply("⚠️ Kamu tidak memiliki izin untuk mengirim pesan ke channel ini.", quote=True)
+
+    if preview:
+        target_channel = message.chat.id
     reply_text = replied.caption if replied and replied.caption else replied.text if replied else ""
     full_text = (reply_text or "") + "\n"
     caption, keyboard = parse_buttons_layout(full_text)
@@ -67,7 +73,7 @@ async def post_with_buttons(client, message):
                     ):
         return await message.reply(
             "⚠️ Tidak ada teks atau media dalam pesan yang di-reply.\n"
-            "Telegram tidak mengizinkan pesan yang hanya berisi tomboltanpa text atau media."
+            "Telegram tidak mengizinkan pesan yang hanya berisi tombol tanpa text atau media."
         )
 
     if replied.photo:
