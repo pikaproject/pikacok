@@ -36,9 +36,9 @@ async def post_with_buttons(client, message):
     preview = False
 
     if not replied:
-        return await message.reply("⚠️ Kamu harus membalas pesan yang ingin diposting ke channel, disertai dengan target channel", quote=True)
+        return await message.reply(f"⚠️ Kamu harus balas pesan yang ingin kamu post ke channel.", quote=True)
     if len(message.command) < 2:
-        return await message.reply("⚠️ Kamu harus menyertakan target channel.\nContoh: `/post @namachannel` atau `/post -10012345`", quote=True)
+        return await message.reply("⚠️ Kamu harus menyertakan target channel.\nContoh: `/post @namachannel` atau `/post -10012345`\nAtau gunakan `/post check` untuk preview pesan sebelum dipost.", quote=True)
 
     target_channel = message.command[1]
     if target_channel == "check":
