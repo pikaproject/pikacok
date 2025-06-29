@@ -52,7 +52,7 @@ web = {
     "yasirapi_v2": "https://v2.yasirapi.eu.org",
     "pahe": "pahe.ink",
     "savefilm21": "https://new6.savefilm21info.com",
-    "melongmovie": "https://tv1.melongmovies.com",
+    "melongmovie": "https://tv4.melongmovies.com",
     "terbit21": "https://terbit21.cc",
     "lk21": "https://tv12.lk21official.my",
     "gomov": "https://klikxxi.com",
