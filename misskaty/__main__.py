@@ -76,16 +76,16 @@ async def start_bot():
             LOGGER.info("[INFO]: ONLINE STATUS SENT TO %s", i)
     except Exception as e:
         LOGGER.error(str(e))
-    #scheduler.add_job(
-    #    check_kicks,
-    #    trigger=IntervalTrigger(minutes=120),
-    #    id="0",
-    #    name="Check AutoKicks",
-    #    misfire_grace_time=15,
-    #    max_instances=1,
-    #    next_run_time=datetime.now() + timedelta(seconds=20),
-    #    replace_existing=True,
-    #)
+    scheduler.add_job(
+        check_kicks,
+        trigger=IntervalTrigger(minutes=120),
+        id="0",
+        name="Check AutoKicks",
+        misfire_grace_time=15,
+        max_instances=1,
+        next_run_time=datetime.now() + timedelta(seconds=20),
+        replace_existing=True,
+    )
     LOGGER.info("[INFO]: Add Jobs Check Kick")
     scheduler.start()
     if "web" not in await dbname.list_collection_names():
