@@ -60,21 +60,21 @@ async def start_bot():
     LOGGER.info("+===============+===============+===============+===============+")
     LOGGER.info("[INFO]: BOT STARTED AS @%s!", BOT_USERNAME)
 
-    #try:
-    #    LOGGER.info("[INFO]: SENDING ONLINE STATUS")
-    #    for i in SUDO:
-    #        if USER_SESSION:
-    #            await app.send_message(
-    #                i,
-    #                f"USERBOT AND BOT STARTED with Pyrogram v{__version__}..\nUserBot: {UBOT_NAME}\nBot: {BOT_NAME}\n\nwith Pyrogram v{__version__} (Layer {layer}) started on @{BOT_USERNAME}.\n\n<code>{bot_modules}</code>",
-    #            )
-    #        else:
-    #            await app.send_message(
-    #                i,
-    #                f"BOT STARTED with Pyrogram v{__version__} as {BOT_NAME}\n\nwith Pyrogram v{__version__} (Layer {layer}) started on @{BOT_USERNAME}.\n\n<code>{bot_modules}</code>",
-    #            )
-    #except Exception as e:
-    #    LOGGER.error(str(e))
+    try:
+        LOGGER.info("[INFO]: SENDING ONLINE STATUS")
+        for i in SUDO:
+            if USER_SESSION:
+                await app.send_message(
+                    i,
+                    f"USERBOT AND BOT STARTED with Pyrogram v{__version__}..\nUserBot: {UBOT_NAME}\nBot: {BOT_NAME}\n\nwith Pyrogram v{__version__} (Layer {layer}) started on @{BOT_USERNAME}.\n\n<code>{bot_modules}</code>",
+                )
+            else:
+                await app.send_message(
+                    i,
+                    f"BOT STARTED with Pyrogram v{__version__} as {BOT_NAME}\n\nwith Pyrogram v{__version__} (Layer {layer}) started on @{BOT_USERNAME}.\n\n<code>{bot_modules}</code>",
+                )
+    except Exception as e:
+        LOGGER.error(str(e))
     scheduler.add_job(
         check_kicks,
         trigger=IntervalTrigger(minutes=120),
