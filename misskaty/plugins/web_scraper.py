@@ -51,10 +51,10 @@ web = {
     "yasirapi": "https://yasirapi.eu.org",
     "yasirapi_v2": "https://v2.yasirapi.eu.org",
     "pahe": "pahe.ink",
-    "savefilm21": "https://new7.savefilm21info.com",
-    "melongmovie": "https://tv4.melongmovies.com",
-    "terbit21": "https://terbit21.cc",
-    "lk21": "https://tv12.lk21official.my",
+    "savefilm21": "https://new11.savefilm21info.com",
+    "melongmovie": "https://tv11.melongmovies.com",
+    "terbit21": "https://terbit21official.site",
+    "lk21": "https://tv6.lk21official.cc",
     "gomov": "https://klikxxi.com",
     "movieku": "https://movieku.ink",
     "kusonime": "https://kusonime.com",
@@ -62,9 +62,9 @@ web = {
     "samehadaku": "https://samehadaku.help",
     "oplovers": "https://oploverz.red",
     "nodrakor": "https://no-drakor.xyz",
-    "nunadrama": "https://tv.nunadrama.store",
+    "nunadrama": "https://tvnunadrama.store",
     "dutamovie": "https://yborfilmfestival.com",
-    "pusatfilm": "http://85.203.26.50"
+    "pusatfilm": "https://drama.pusatmovie21.work"
 }
 
 
@@ -122,9 +122,9 @@ async def getDatalk21(msg, kueri, CurrentPage, strings):
         with contextlib.redirect_stdout(sys.stderr):
             try:
                 if kueri:
-                    lk21json = await fetch.get(f"{web['yasirapi_v2']}/lk21?q={kueri}")
+                    lk21json = await fetch.get(f"{web['yasirapi']}/lk21?q={kueri}")
                 else:
-                    lk21json = await fetch.get(f"{web['yasirapi_v2']}/lk21")
+                    lk21json = await fetch.get(f"{web['yasirapi']}/lk21")
                 lk21json.raise_for_status()
             except httpx.HTTPError as exc:
                 await msg.edit_msg(
