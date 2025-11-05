@@ -567,7 +567,7 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
                     )
                 if people["writers"]:
                     res_str += (
-                        f"<b>✒️ Penulis:</b> "
+                        f"<b>Penulis:</b> "
                         f"{_format_people_list(people['writers'])}\n"
                     )
                 if people["cast"]:
