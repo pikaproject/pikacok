@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import sys
+from typing import Optional
 from urllib.parse import quote_plus
 
 import httpx
@@ -38,6 +39,102 @@ from utils import demoji
 
 LOGGER = logging.getLogger("MissKaty")
 LIST_CARI = Cache(filename="imdb_cache.db", path="cache", in_memory=False)
+
+
+def _format_people_list(people_list, limit=None):
+    if not people_list:
+        return ""
+    if limit is not None:
+        people_list = people_list[:limit]
+    formatted = []
+    for person in people_list:
+        name = person.get("name")
+        if not name:
+            continue
+        url = person.get("url")
+        clean_name = demoji(name)
+        if url:
+            formatted.append(f"<a href='{url}'>{clean_name}</a>")
+        else:
+            formatted.append(clean_name)
+    return ", ".join(formatted)
+
+
+def _extract_people_from_imdb(soup: BeautifulSoup, metadata: dict) -> dict:
+    people = {"directors": [], "writers": [], "cast": []}
+    seen = {key: set() for key in people}
+
+    def add_person(
+        section: str, name: Optional[str], url: Optional[str] = None
+    ) -> None:
+        if not name:
+            return
+        key = (url or name).lower()
+        if key in seen[section]:
+            return
+        seen[section].add(key)
+        people[section].append({"name": name, "url": url})
+
+    next_script = soup.find("script", id="__NEXT_DATA__")
+    if next_script and next_script.string:
+        try:
+            next_data = json.loads(next_script.string)
+        except json.JSONDecodeError:
+            next_data = {}
+        main_column = (
+            next_data.get("props", {})
+            .get("pageProps", {})
+            .get("mainColumnData", {})
+        )
+        for section in main_column.get("crewV2") or []:
+            grouping = (section.get("grouping") or {}).get("text", "").lower()
+            for credit in section.get("credits") or []:
+                name_info = credit.get("name") or {}
+                name_text = (name_info.get("nameText") or {}).get("text")
+                imdb_id = name_info.get("id")
+                url = f"https://www.imdb.com/name/{imdb_id}/" if imdb_id else None
+                if "director" in grouping:
+                    add_person("directors", name_text, url)
+                elif "writer" in grouping:
+                    add_person("writers", name_text, url)
+        for section in main_column.get("castV2") or []:
+            for credit in section.get("credits") or []:
+                name_info = credit.get("name") or {}
+                name_text = (name_info.get("nameText") or {}).get("text")
+                imdb_id = name_info.get("id")
+                url = f"https://www.imdb.com/name/{imdb_id}/" if imdb_id else None
+                add_person("cast", name_text, url)
+            if people["cast"]:
+                break
+
+    def iter_people(field):
+        if not field:
+            return []
+        if isinstance(field, list):
+            return field
+        return [field]
+
+    if not people["directors"]:
+        for item in iter_people(metadata.get("director")):
+            name = item.get("name")
+            url = item.get("url")
+            add_person("directors", name, url)
+
+    if not people["writers"]:
+        for item in iter_people(metadata.get("creator")):
+            if item.get("@type") != "Person":
+                continue
+            name = item.get("name")
+            url = item.get("url")
+            add_person("writers", name, url)
+
+    if not people["cast"]:
+        for item in iter_people(metadata.get("actor")):
+            name = item.get("name")
+            url = item.get("url")
+            add_person("cast", name, url)
+
+    return people
 
 
 # IMDB Choose Language
@@ -460,24 +557,24 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
                     )
                 )
                 res_str += f"<b>Bahasa:</b> {language[:-2]}\n"
-            res_str += "\n<b>🙎 Info Cast:</b>\n"
-            if directors := r_json.get("director"):
-                director = "".join(
-                    f"<a href='{i['url']}'>{i['name']}</a>, " for i in directors
-                )
-                res_str += f"<b>Sutradara:</b> {director[:-2]}\n"
-            if creators := r_json.get("creator"):
-                creator = "".join(
-                    f"<a href='{i['url']}'>{i['name']}</a>, "
-                    for i in creators
-                    if i["@type"] == "Person"
-                )
-                res_str += f"<b>Penulis:</b> {creator[:-2]}\n"
-            if actors := r_json.get("actor"):
-                actor = "".join(
-                    f"<a href='{i['url']}'>{i['name']}</a>, " for i in actors
-                )
-                res_str += f"<b>Pemeran:</b> {actor[:-2]}\n\n"
+            people = _extract_people_from_imdb(sop, r_json)
+            if any(people.values()):
+                res_str += "\n<b>🙎 Info Cast:</b>\n"
+                if people["directors"]:
+                    res_str += (
+                        f"<b>Sutradara:</b> "
+                        f"{_format_people_list(people['directors'])}\n"
+                    )
+                if people["writers"]:
+                    res_str += (
+                        f"<b>✒️ Penulis:</b> "
+                        f"{_format_people_list(people['writers'])}\n"
+                    )
+                if people["cast"]:
+                    res_str += (
+                        f"<b>Pemeran:</b> "
+                        f"{_format_people_list(people['cast'], limit=10)}\n\n"
+                    )
             if deskripsi := r_json.get("description"):
                 summary = (await gtranslate(deskripsi, "auto", "id")).text
                 res_str += f"<b>📜 Plot:</b>\n<blockquote><code>{summary}</code></blockquote>\n\n"
@@ -637,25 +734,24 @@ async def imdb_en_callback(self: Client, query: CallbackQuery):
                     )
                 )
                 res_str += f"<b>Language:</b> {language[:-2]}\n"
-            res_str += "\n<b>🙎 Cast Info:</b>\n"
-            if r_json.get("director"):
-                director = "".join(
-                    f"<a href='{i['url']}'>{i['name']}</a>, "
-                    for i in r_json["director"]
-                )
-                res_str += f"<b>Director:</b> {director[:-2]}\n"
-            if r_json.get("creator"):
-                creator = "".join(
-                    f"<a href='{i['url']}'>{i['name']}</a>, "
-                    for i in r_json["creator"]
-                    if i["@type"] == "Person"
-                )
-                res_str += f"<b>Writer:</b> {creator[:-2]}\n"
-            if r_json.get("actor"):
-                actors = actors = "".join(
-                    f"<a href='{i['url']}'>{i['name']}</a>, " for i in r_json["actor"]
-                )
-                res_str += f"<b>Stars:</b> {actors[:-2]}\n\n"
+            people = _extract_people_from_imdb(sop, r_json)
+            if any(people.values()):
+                res_str += "\n<b>🙎 Cast Info:</b>\n"
+                if people["directors"]:
+                    res_str += (
+                        f"<b>Director:</b> "
+                        f"{_format_people_list(people['directors'])}\n"
+                    )
+                if people["writers"]:
+                    res_str += (
+                        f"<b>Writer:</b> "
+                        f"{_format_people_list(people['writers'])}\n"
+                    )
+                if people["cast"]:
+                    res_str += (
+                        f"<b>Stars:</b> "
+                        f"{_format_people_list(people['cast'], limit=10)}\n\n"
+                    )
             if description := r_json.get("description"):
                 res_str += f"<b>📜 Summary:</b>\n<blockquote><code>{description}</code></blockquote>\n\n"
             if r_json.get("keywords"):
