@@ -64,7 +64,12 @@ class temp:
 
 
 def demoji(teks):
-    return emoji.emojize(f":{teks.replace(' ', '_').replace('-', '_')}:")
+    if not teks:
+        return ""
+    try:
+        return emoji.replace_emoji(teks, replace="")
+    except AttributeError:
+        return emoji.get_emoji_regexp().sub("", teks)
 
 
 async def broadcast_messages(user_id, message):
