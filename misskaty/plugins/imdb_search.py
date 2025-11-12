@@ -41,11 +41,19 @@ from utils import demoji
 
 LOGGER = logging.getLogger("MissKaty")
 LIST_CARI = Cache(filename="imdb_cache.db", path="cache", in_memory=False)
+IMDB_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
 
 
 def _scrape_imdb_html(imdb_url: str) -> str:
     scraper = cloudscraper.create_scraper()
-    resp = scraper.get(imdb_url, timeout=30)
+    resp = scraper.get(imdb_url, timeout=30, headers=IMDB_HEADERS)
     resp.raise_for_status()
     return resp.text
 
@@ -58,7 +66,7 @@ async def _fetch_imdb_html_via_scraper(imdb_url: str) -> str:
 async def _fetch_imdb_html(
     imdb_url: str,
 ) -> tuple[str, int, Optional[str], bool]:
-    resp = await fetch.get(imdb_url)
+    resp = await fetch.get(imdb_url, headers=IMDB_HEADERS)
     status_code = getattr(resp, "status_code", 0)
     headers = getattr(resp, "headers", {}) or {}
     waf_action = headers.get("x-amzn-waf-action") if headers else None
