@@ -649,9 +649,9 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
             await query.message.edit_caption(
                 f"HTTP Exception for IMDB Search - <code>{exc}</code>"
             )
-        except AttributeError:
+        except AttributeError as err:
             await query.message.edit_caption(
-                "Maaf, gagal mendapatkan info data dari IMDB."
+                f"Maaf, gagal mendapatkan info data dari IMDB. {err}"
             )
         except (MessageNotModified, MessageIdInvalid):
             pass
