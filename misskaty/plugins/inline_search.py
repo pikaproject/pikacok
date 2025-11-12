@@ -27,6 +27,7 @@ from pyrogram.types import (
 from misskaty import BOT_USERNAME, app, user
 from misskaty.helper import GENRES_EMOJI, fetch, gtranslate, post_to_telegraph, search_jw
 from misskaty.plugins.dev import shell_exec
+from misskaty.plugins.imdb_search import _get_imdb_page
 from misskaty.plugins.misc_tools import calc_btn
 from misskaty.vars import USER_SESSION
 from utils import demoji
@@ -635,11 +636,7 @@ async def imdb_inl(_, query):
                 "⏳ <i>Permintaan kamu sedang diproses.. </i>"
             )
             url = f"https://www.imdb.com/title/{movie}/"
-            resp = await fetch.get(url)
-            sop = BeautifulSoup(resp.text, "lxml")
-            r_json = json.loads(
-                sop.find("script", attrs={"type": "application/ld+json"}).contents[0]
-            )
+            sop, r_json = await _get_imdb_page(url)
             ott = await search_jw(r_json.get("alternateName") or r_json["name"], "ID")
             res_str = ""
             typee = r_json.get("@type", "")
@@ -773,6 +770,10 @@ async def imdb_inl(_, query):
             )
         except (MessageNotModified, MessageIdInvalid):
             pass
+        except ValueError as err:
+            await query.edit_message_caption(
+                f"Maaf, gagal mendapatkan info data dari IMDB. {err}"
+            )
         except Exception:
             exc = traceback.format_exc()
             await query.edit_message_caption(f"<b>ERROR:</b>\n<code>{exc}</code>")

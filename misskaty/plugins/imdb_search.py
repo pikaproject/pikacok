@@ -2,6 +2,7 @@
 # * @date          2023-06-21 22:12:27
 # * @projectName   MissKatyPyro
 # * Copyright ©YasirPedia All rights reserved
+import asyncio
 import contextlib
 import json
 import logging
@@ -11,6 +12,7 @@ from typing import Optional
 from urllib.parse import quote_plus
 
 import httpx
+import cloudscraper
 from bs4 import BeautifulSoup
 from pykeyboard import InlineButton, InlineKeyboard
 from pyrogram import Client, enums
@@ -39,6 +41,80 @@ from utils import demoji
 
 LOGGER = logging.getLogger("MissKaty")
 LIST_CARI = Cache(filename="imdb_cache.db", path="cache", in_memory=False)
+
+
+def _scrape_imdb_html(imdb_url: str) -> str:
+    scraper = cloudscraper.create_scraper()
+    resp = scraper.get(imdb_url, timeout=30)
+    resp.raise_for_status()
+    return resp.text
+
+
+async def _fetch_imdb_html_via_scraper(imdb_url: str) -> str:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _scrape_imdb_html, imdb_url)
+
+
+async def _fetch_imdb_html(
+    imdb_url: str,
+) -> tuple[str, int, Optional[str], bool]:
+    resp = await fetch.get(imdb_url)
+    status_code = getattr(resp, "status_code", 0)
+    headers = getattr(resp, "headers", {}) or {}
+    waf_action = headers.get("x-amzn-waf-action") if headers else None
+    text = getattr(resp, "text", "") or ""
+    if status_code >= 400:
+        resp.raise_for_status()
+    used_fallback = False
+    if status_code == 202 or waf_action or not text.strip():
+        LOGGER.warning(
+            "IMDB returned status=%s waf=%s for %s; retrying via cloudscraper",
+            status_code,
+            waf_action,
+            imdb_url,
+        )
+        text = await _fetch_imdb_html_via_scraper(imdb_url)
+        used_fallback = True
+    return text, status_code, waf_action, used_fallback
+
+
+def _parse_imdb_metadata(html: str) -> tuple[BeautifulSoup, Optional[dict]]:
+    soup = BeautifulSoup(html, "lxml")
+    script_tag = soup.find("script", attrs={"type": "application/ld+json"})
+    if not script_tag:
+        return soup, None
+    raw = script_tag.string
+    if raw is None and script_tag.contents:
+        raw = script_tag.contents[0]
+    if not raw:
+        return soup, None
+    try:
+        return soup, json.loads(raw)
+    except json.JSONDecodeError:
+        LOGGER.exception("Failed to decode IMDB metadata JSON.")
+    return soup, None
+
+
+async def _get_imdb_page(imdb_url: str) -> tuple[BeautifulSoup, dict]:
+    html, status_code, waf_action, used_fallback = await _fetch_imdb_html(imdb_url)
+    soup, metadata = _parse_imdb_metadata(html)
+    if metadata:
+        return soup, metadata
+    LOGGER.warning(
+        "IMDB metadata missing on first parse (status=%s, waf=%s, fallback=%s) for %s",
+        status_code,
+        waf_action,
+        used_fallback,
+        imdb_url,
+    )
+    if not used_fallback:
+        html = await _fetch_imdb_html_via_scraper(imdb_url)
+        soup, metadata = _parse_imdb_metadata(html)
+        if metadata:
+            return soup, metadata
+    raise ValueError(
+        f"Tidak dapat mengambil metadata IMDB (status={status_code}, waf={waf_action})."
+    )
 
 
 def _format_people_list(people_list, limit=None):
@@ -489,12 +565,7 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
         try:
             await query.message.edit_caption("⏳ Permintaan kamu sedang diproses.. ")
             imdb_url = f"https://www.imdb.com/title/tt{movie}/"
-            resp = await fetch.get(imdb_url)
-            resp.raise_for_status()
-            sop = BeautifulSoup(resp.text, "lxml")
-            r_json = json.loads(
-                sop.find("script", attrs={"type": "application/ld+json"}).contents[0]
-            )
+            sop, r_json = await _get_imdb_page(imdb_url)
             ott = await search_jw(
                 r_json.get("alternateName") or r_json.get("name"), "ID"
             )
@@ -649,7 +720,7 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
             await query.message.edit_caption(
                 f"HTTP Exception for IMDB Search - <code>{exc}</code>"
             )
-        except AttributeError as err:
+        except (AttributeError, ValueError) as err:
             await query.message.edit_caption(
                 f"Maaf, gagal mendapatkan info data dari IMDB. {err}"
             )
@@ -666,12 +737,7 @@ async def imdb_en_callback(self: Client, query: CallbackQuery):
         try:
             await query.message.edit_caption("<i>⏳ Getting IMDb source..</i>")
             imdb_url = f"https://www.imdb.com/title/tt{movie}/"
-            resp = await fetch.get(imdb_url)
-            resp.raise_for_status()
-            sop = BeautifulSoup(resp.text, "lxml")
-            r_json = json.loads(
-                sop.find("script", attrs={"type": "application/ld+json"}).contents[0]
-            )
+            sop, r_json = await _get_imdb_page(imdb_url)
             ott = await search_jw(
                 r_json.get("alternateName") or r_json.get("name"), "US"
             )
@@ -823,7 +889,9 @@ async def imdb_en_callback(self: Client, query: CallbackQuery):
             await query.message.edit_caption(
                 f"HTTP Exception for IMDB Search - <code>{exc}</code>"
             )
-        except AttributeError:
-            await query.message.edit_caption("Sorry, failed getting data from IMDB.")
+        except (AttributeError, ValueError) as err:
+            await query.message.edit_caption(
+                f"Sorry, failed getting data from IMDB. {err}"
+            )
         except (MessageNotModified, MessageIdInvalid):
             pass
