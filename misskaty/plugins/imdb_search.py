@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import sys
+from os import environ
 from typing import Optional
 from urllib.parse import quote_plus
 
@@ -50,6 +51,7 @@ IMDB_HEADERS = {
     ),
     "Accept-Language": "en-US,en;q=0.9",
 }
+FLARESOLVERR_URL = environ.get("FLARESOLVERR_URL", "http://cf.pika.web.id:8191/v1")
 
 
 def _scrape_imdb_html(imdb_url: str) -> str:
@@ -70,6 +72,36 @@ def _scrape_imdb_html(imdb_url: str) -> str:
 async def _fetch_imdb_html_via_scraper(imdb_url: str) -> str:
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _scrape_imdb_html, imdb_url)
+
+
+async def _fetch_imdb_html_via_flaresolverr(imdb_url: str) -> Optional[str]:
+    if not FLARESOLVERR_URL:
+        return None
+    payload = {
+        "cmd": "request.get",
+        "url": imdb_url,
+        "maxTimeout": 60000,
+    }
+    try:
+        resp = await fetch.post(FLARESOLVERR_URL, json=payload, timeout=60)
+        resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        LOGGER.warning("Flaresolverr HTTP error: %s", exc)
+        return None
+    try:
+        data = resp.json()
+    except json.JSONDecodeError:
+        LOGGER.warning("Failed to decode Flaresolverr response for %s", imdb_url)
+        return None
+    if data.get("status") != "ok":
+        LOGGER.warning("Flaresolverr returned error for %s: %s", imdb_url, data)
+        return None
+    solution = data.get("solution") or {}
+    html = solution.get("response")
+    if not html:
+        LOGGER.warning("Flaresolverr response missing HTML for %s", imdb_url)
+        return None
+    return html
 
 
 async def _fetch_imdb_html(
@@ -129,8 +161,14 @@ async def _get_imdb_page(imdb_url: str) -> tuple[BeautifulSoup, dict]:
         soup, metadata = _parse_imdb_metadata(html)
         if metadata:
             return soup, metadata
+    flare_html = await _fetch_imdb_html_via_flaresolverr(imdb_url)
+    if flare_html:
+        soup, metadata = _parse_imdb_metadata(flare_html)
+        if metadata:
+            LOGGER.info("Successfully fetched IMDB metadata via Flaresolverr for %s", imdb_url)
+            return soup, metadata
     raise ValueError(
-        f"Tidak dapat mengambil metadata IMDB (status={status_code}, waf={waf_action})."
+        f"Tidak dapat mengambil metadata IMDB (status={status_code}, waf={waf_action}, flare={bool(flare_html)})."
     )
 
 
