@@ -492,6 +492,7 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
             resp = await fetch.get(imdb_url)
             resp.raise_for_status()
             sop = BeautifulSoup(resp, "lxml")
+            LOGGER.info(f"resp: {sop}.")
             r_json = json.loads(
                 sop.find("script", attrs={"type": "application/ld+json"}).contents[0]
             )
