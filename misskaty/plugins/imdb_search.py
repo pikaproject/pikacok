@@ -14,6 +14,7 @@ from urllib.parse import quote_plus
 import httpx
 import cloudscraper
 from bs4 import BeautifulSoup
+import requests
 from pykeyboard import InlineButton, InlineKeyboard
 from pyrogram import Client, enums
 from pyrogram.errors import (
@@ -52,6 +53,14 @@ IMDB_HEADERS = {
 
 
 def _scrape_imdb_html(imdb_url: str) -> str:
+    session = requests.Session()
+    session.headers.update(IMDB_HEADERS)
+    waf_hint = None
+    for _ in range(3):
+        resp = session.get(imdb_url, timeout=20)
+        waf_hint = resp.headers.get("x-amzn-waf-action")
+        if resp.status_code != 202 and waf_hint != "challenge" and resp.text.strip():
+            return resp.text
     scraper = cloudscraper.create_scraper()
     resp = scraper.get(imdb_url, timeout=30, headers=IMDB_HEADERS)
     resp.raise_for_status()
