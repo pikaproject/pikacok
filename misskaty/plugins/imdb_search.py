@@ -490,9 +490,9 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
             await query.message.edit_caption("⏳ Permintaan kamu sedang diproses.. ")
             imdb_url = f"https://www.imdb.com/title/tt{movie}/"
             resp = await fetch.get(imdb_url)
+            LOGGER.info(f"resp: {resp}.")
             resp.raise_for_status()
             sop = BeautifulSoup(resp, "lxml")
-            LOGGER.info(f"resp: {resp.text}.")
             r_json = json.loads(
                 sop.find("script", attrs={"type": "application/ld+json"}).contents[0]
             )
