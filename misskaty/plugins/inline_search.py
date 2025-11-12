@@ -636,7 +636,7 @@ async def imdb_inl(_, query):
             )
             url = f"https://www.imdb.com/title/{movie}/"
             resp = await fetch.get(url)
-            sop = BeautifulSoup(resp, "lxml")
+            sop = BeautifulSoup(resp.text, "lxml")
             r_json = json.loads(
                 sop.find("script", attrs={"type": "application/ld+json"}).contents[0]
             )
