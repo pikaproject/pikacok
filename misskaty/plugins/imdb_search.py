@@ -4,6 +4,7 @@
 # * Copyright ©YasirPedia All rights reserved
 import asyncio
 import contextlib
+import html
 import json
 import logging
 import re
@@ -39,10 +40,13 @@ from pyrogram.types import (
 from database.imdb_db import (
     DEFAULT_IMDB_LAYOUT,
     add_imdbset,
+    clear_custom_imdb_template,
+    get_custom_imdb_template,
     get_imdb_layout,
     is_imdbset,
     remove_imdbset,
     reset_imdb_layout,
+    set_custom_imdb_template,
     toggle_imdb_layout,
 )
 from misskaty import app
@@ -93,12 +97,101 @@ IMDB_EMPTY_LAYOUT_NOTICE = {
     ),
 }
 
+CUSTOM_TEMPLATE_PLACEHOLDERS = [
+    ("title", "Judul utama"),
+    ("title_with_year", "Judul + tahun"),
+    ("title_link", "Judul + tahun versi tautan"),
+    ("aka", "Judul alternatif (AKA)"),
+    ("type", "Jenis konten (Movie, Series, dll)"),
+    ("year", "Rentang/tahun perilisan"),
+    ("duration", "Durasi (diterjemahkan untuk ID)"),
+    ("duration_raw", "Durasi asli dari IMDb"),
+    ("category", "Rating konten (PG-13, dll)"),
+    ("rating_value", "Nilai rating IMDb"),
+    ("rating_count", "Total penilai"),
+    ("rating_text", "Ringkasan rating sesuai bahasa"),
+    ("release", "Tanggal rilis"),
+    ("release_url", "Tautan tanggal rilis"),
+    ("release_link", "Tanggal rilis versi tautan"),
+    ("genres", "Genre dalam bentuk hashtag"),
+    ("genres_list", "Genre dipisah koma"),
+    ("countries", "Daftar negara + hashtag"),
+    ("countries_list", "Daftar negara biasa"),
+    ("languages", "Daftar bahasa + hashtag"),
+    ("languages_list", "Daftar bahasa biasa"),
+    ("directors", "Daftar sutradara"),
+    ("writers", "Daftar penulis"),
+    ("cast", "Daftar pemeran"),
+    ("plot", "Plot / summary"),
+    ("keywords", "Daftar kata kunci versi hashtag"),
+    ("keywords_list", "Daftar kata kunci dipisah koma"),
+    ("awards", "Informasi penghargaan"),
+    ("availability", "Info layanan streaming"),
+    ("ott", "Data mentah dari pencarian OTT"),
+    ("imdb_by", "Tagline @username bot"),
+    ("imdb_url", "URL halaman IMDb"),
+    ("trailer_url", "URL trailer"),
+    ("poster_url", "URL poster"),
+    ("imdb_code", "ID IMDb (misal tt1234567)"),
+    ("locale", "Kode bahasa (id/en)"),
+]
+
+CUSTOM_TEMPLATE_BUTTON_PATTERN = re.compile(r"\[([^\[\]]+)\]\(([^)]+)\)")
+PLACEHOLDER_HELP_TEXT = "\n".join(
+    f"• <code>{{{key}}}</code> - {desc}"
+    for key, desc in CUSTOM_TEMPLATE_PLACEHOLDERS
+)
+
+
+class _SafeTemplateDict(dict):
+    def __missing__(self, key):
+        return ""
+
+
+def _extract_template_buttons(
+    text: str,
+) -> tuple[str, Optional[InlineKeyboardMarkup]]:
+    buttons = []
+
+    def _repl(match: re.Match) -> str:
+        label = (match.group(1) or "").strip()
+        url = (match.group(2) or "").strip()
+        if label and url:
+            buttons.append((label, url))
+        return ""
+
+    cleaned = CUSTOM_TEMPLATE_BUTTON_PATTERN.sub(_repl, text or "")
+    if not buttons:
+        return cleaned.strip(), None
+    rows = []
+    current_row = []
+    for label, url in buttons:
+        current_row.append(InlineKeyboardButton(label, url=url))
+        if len(current_row) == 2:
+            rows.append(current_row)
+            current_row = []
+    if current_row:
+        rows.append(current_row)
+    return cleaned.strip(), InlineKeyboardMarkup(rows)
+
+
+def _render_custom_template(
+    template: str, context: dict
+) -> tuple[str, Optional[InlineKeyboardMarkup]]:
+    try:
+        rendered = template.format_map(_SafeTemplateDict(context))
+    except Exception as exc:
+        raise ValueError(str(exc)) from exc
+    rendered = rendered.strip()
+    return _extract_template_buttons(rendered)
+
 
 def _build_imdb_settings_caption(user_name: str) -> str:
     return (
         f"Halo {user_name}!\n"
         "Kelola preferensi IMDb Search kamu di sini.\n\n"
         "• 🎛 Edit Layout → pilih informasi apa saja yang tampil di hasil detail.\n"
+        "• 🧩 Custom Layout → pakai template HTML sendiri.\n"
         "• 🚩 Language → set bahasa default saat memakai /imdb.\n\n"
         "Sentuh salah satu tombol di bawah untuk memulai."
     )
@@ -107,29 +200,20 @@ def _build_imdb_settings_caption(user_name: str) -> str:
 def _build_imdb_settings_keyboard(user_id: int) -> InlineKeyboard:
     buttons = InlineKeyboard(row_width=1)
     buttons.row(InlineButton("🎛 Edit Layout", f"imdbslayout#{user_id}"))
+    buttons.row(InlineButton("🧩 Custom Layout", f"imdbcustom#{user_id}"))
     buttons.row(InlineButton("🚩 Language", f"imdbset#{user_id}"))
     buttons.row(InlineButton("❌ Close", f"close#{user_id}"))
     return buttons
 
 
-def _build_layout_caption(layout: dict) -> str:
-    total_fields = len(IMDB_LAYOUT_FIELDS)
-    enabled_fields = [
-        label for key, label in IMDB_LAYOUT_FIELDS if layout.get(key, True)
-    ]
-    disabled_fields = [
-        label for key, label in IMDB_LAYOUT_FIELDS if not layout.get(key, True)
-    ]
-    caption = (
-        "Hidupkan atau matikan bagian IMDb berikut sesuai kebutuhanmu.\n"
-        f"Status saat ini: {len(enabled_fields)}/{total_fields} bagian aktif.\n"
-    )
-    if enabled_fields:
-        caption += f"\n✅ Aktif: {', '.join(enabled_fields)}"
-    if disabled_fields:
-        caption += f"\n🚫 Nonaktif: {', '.join(disabled_fields)}"
-    caption += "\n\nTap tombol untuk toggle atau reset jika ingin kembali ke default."
-    return caption
+def _build_layout_caption(layout: dict, custom_active: bool = False) -> str:
+    text = "Silahkan edit layout IMDb anda, tekan reset untuk kembali ke default."
+    if custom_active:
+        text += (
+            "\n\n⚠️ Custom template sedang aktif jadi pengaturan ini akan "
+            "diabaikan sampai template manual dihapus."
+        )
+    return text
 
 
 def _build_layout_keyboard(user_id: int, layout: dict) -> InlineKeyboard:
@@ -150,6 +234,31 @@ def _build_layout_keyboard(user_id: int, layout: dict) -> InlineKeyboard:
     return buttons
 
 
+async def _render_custom_layout_menu(query: CallbackQuery, user_id: int) -> None:
+    template = await get_custom_imdb_template(user_id)
+    status = "Aktif ✅" if template else "Belum diatur ❌"
+    caption = (
+        "<b>Custom Layout IMDb</b>\n"
+        f"Status: <b>{status}</b>\n\n"
+        "• Pakai <code>/imdbtemplate set</code> lalu balas pesan yang berisi "
+        "template HTML kamu atau tulis templatenya setelah perintah.\n"
+        "• Hapus dengan <code>/imdbtemplate remove</code>.\n"
+        "• Format tombol: <code>[Label](https://contoh.com)</code>.\n\n"
+        "Catatan: ketika template aktif, pengaturan layout bawaan diabaikan."
+    )
+    buttons = InlineKeyboard(row_width=1)
+    if template:
+        buttons.row(InlineButton("🗑 Hapus Template", f"imdbcustomrm#{user_id}"))
+    buttons.row(
+        InlineButton("⬅️ Back", f"imdbsettings#{user_id}"),
+        InlineButton("❌ Close", f"close#{user_id}"),
+    )
+    with contextlib.suppress(MessageIdInvalid, MessageNotModified):
+        await query.message.edit_caption(
+            caption, reply_markup=buttons, parse_mode=enums.ParseMode.HTML
+        )
+
+
 def _build_imdb_action_markup(
     layout: dict, imdb_url: str, trailer_url: Optional[str]
 ) -> Optional[InlineKeyboardMarkup]:
@@ -161,6 +270,24 @@ def _build_imdb_action_markup(
     if buttons:
         return InlineKeyboardMarkup([buttons])
     return None
+
+
+@app.on_cb("imdbcustom")
+async def imdb_custom_settings(_, query: CallbackQuery):
+    _, uid = query.data.split("#")
+    if query.from_user.id != int(uid):
+        return await query.answer("Access Denied!", True)
+    await _render_custom_layout_menu(query, query.from_user.id)
+
+
+@app.on_cb("imdbcustomrm")
+async def imdb_custom_remove(_, query: CallbackQuery):
+    _, uid = query.data.split("#")
+    if query.from_user.id != int(uid):
+        return await query.answer("Access Denied!", True)
+    await clear_custom_imdb_template(query.from_user.id)
+    await query.answer("Template custom dihapus.", show_alert=True)
+    await _render_custom_layout_menu(query, query.from_user.id)
 
 
 def _scrape_imdb_html(imdb_url: str) -> str:
@@ -367,6 +494,356 @@ def _extract_people_from_imdb(soup: BeautifulSoup, metadata: dict) -> dict:
     return people
 
 
+async def _build_imdb_context(
+    client: Client,
+    soup: BeautifulSoup,
+    metadata: dict,
+    imdb_url: str,
+    ott: str,
+    locale: str,
+    imdb_code: str,
+) -> dict:
+    metadata = metadata or {}
+    context = {key: "" for key, _ in CUSTOM_TEMPLATE_PLACEHOLDERS}
+    title = metadata.get("name") or "N/A"
+    title_text = soup.title.text if soup and soup.title else ""
+    year_match = re.findall(r"\d{4}\W\d{4}|\d{4}-?", title_text)
+    year = year_match[0] if year_match else "N/A"
+    title_with_year = f"{title} [{year}]"
+    context["title"] = title
+    context["title_with_year"] = title_with_year
+    context["title_link"] = f"<a href='{imdb_url}'>{html.escape(title_with_year)}</a>"
+    context["aka"] = metadata.get("alternateName") or ""
+    context["type"] = metadata.get("@type", "") or ""
+    context["year"] = year
+    context["imdb_url"] = imdb_url
+    context["poster_url"] = metadata.get("image") or ""
+    context["imdb_code"] = imdb_code
+    context["ott"] = ott or ""
+    context["availability"] = ott or ""
+    context["locale"] = locale
+    username = getattr(getattr(client, "me", None), "username", None)
+    context["imdb_by"] = f"@{username}" if username else ""
+    runtime_node = soup.select('li[data-testid="title-techspec_runtime"]') if soup else []
+    if runtime_node:
+        runtime_container = runtime_node[0].find(
+            class_="ipc-metadata-list-item__content-container"
+        )
+        if runtime_container:
+            runtime_text = runtime_container.text.strip()
+            context["duration_raw"] = runtime_text
+            if locale == "id":
+                translated = (await gtranslate(runtime_text, "auto", "id")).text
+                context["duration"] = translated
+            else:
+                context["duration"] = runtime_text
+    category = metadata.get("contentRating")
+    if category:
+        context["category"] = category
+    rating_data = metadata.get("aggregateRating") or {}
+    rating_value = rating_data.get("ratingValue")
+    rating_count = rating_data.get("ratingCount")
+    if rating_value is not None:
+        context["rating_value"] = str(rating_value)
+    if rating_count is not None:
+        context["rating_count"] = str(rating_count)
+    if rating_value and rating_count:
+        if locale == "id":
+            context["rating_text"] = (
+                f"{rating_value}/10 dari {rating_count} pengguna"
+            )
+        else:
+            context["rating_text"] = (
+                f"{rating_value}/10 from {rating_count} users"
+            )
+    release_section = soup.select('li[data-testid="title-details-releasedate"]') if soup else []
+    if release_section:
+        release_node = release_section[0].find(
+            class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
+        )
+        if release_node:
+            release_text = release_node.text.strip()
+            release_href = release_node.get("href", "")
+            release_url = f"https://www.imdb.com{release_href}"
+            context["release"] = release_text
+            context["release_url"] = release_url
+            context["release_link"] = f"<a href='{release_url}'>{html.escape(release_text)}</a>"
+    genres = metadata.get("genre") or []
+    if isinstance(genres, str):
+        genres = [genres]
+    if genres:
+        genre_tags = "".join(
+            f"{GENRES_EMOJI[g]} #{g.replace('-', '_').replace(' ', '_')}, "
+            if g in GENRES_EMOJI
+            else f"#{g.replace('-', '_').replace(' ', '_')}, "
+            for g in genres
+        )
+        context["genres"] = genre_tags[:-2]
+        context["genres_list"] = ", ".join(genres)
+    origin_section = soup.select('li[data-testid="title-details-origin"]') if soup else []
+    if origin_section:
+        country_tags = []
+        country_names = []
+        for country in origin_section[0].findAll(
+            class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
+        ):
+            name = country.text.strip()
+            if not name:
+                continue
+            country_names.append(name)
+            country_tags.append(
+                f"{demoji(name)} #{name.replace(' ', '_').replace('-', '_')}"
+            )
+        if country_tags:
+            context["countries"] = ", ".join(country_tags)
+        if country_names:
+            context["countries_list"] = ", ".join(country_names)
+    language_section = soup.select('li[data-testid="title-details-languages"]') if soup else []
+    if language_section:
+        lang_tags = []
+        lang_names = []
+        for lang in language_section[0].findAll(
+            class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
+        ):
+            name = lang.text.strip()
+            if not name:
+                continue
+            lang_names.append(name)
+            lang_tags.append(f"#{name.replace(' ', '_').replace('-', '_')}")
+        if lang_tags:
+            context["languages"] = ", ".join(lang_tags)
+        if lang_names:
+            context["languages_list"] = ", ".join(lang_names)
+    people = _extract_people_from_imdb(soup, metadata)
+    if people["directors"]:
+        context["directors"] = _format_people_list(people["directors"])
+    if people["writers"]:
+        context["writers"] = _format_people_list(people["writers"])
+    if people["cast"]:
+        context["cast"] = _format_people_list(people["cast"], limit=10)
+    description = metadata.get("description")
+    if description:
+        if locale == "id":
+            context["plot"] = (await gtranslate(description, "auto", "id")).text
+        else:
+            context["plot"] = description
+    keywords_raw = metadata.get("keywords") or ""
+    if keywords_raw:
+        keywords_list = [
+            keyword.strip() for keyword in keywords_raw.split(",") if keyword.strip()
+        ]
+        if keywords_list:
+            context["keywords_list"] = ", ".join(keywords_list)
+            keywords_tags = "".join(
+                f"#{kw.replace(' ', '_').replace('-', '_')}, " for kw in keywords_list
+            )
+            context["keywords"] = keywords_tags[:-2]
+    awards_section = soup.select('li[data-testid="award_information"]') if soup else []
+    if awards_section:
+        award_text = (
+            awards_section[0]
+            .find(class_="ipc-metadata-list-item__list-content-item")
+            .text
+        )
+        if award_text:
+            if locale == "id":
+                context["awards"] = (await gtranslate(award_text, "auto", "id")).text
+            else:
+                context["awards"] = award_text
+    trailer = metadata.get("trailer") or {}
+    if trailer.get("url"):
+        context["trailer_url"] = trailer["url"]
+    return context
+
+
+IMDB_FIELD_LABELS = {
+    "id": {
+        "title": "📰 Judul",
+        "aka": "🗂 AKA",
+        "duration": "Durasi",
+        "category": "Kategori",
+        "rating": "Peringkat",
+        "release": "Rilis",
+        "genre": "Genre",
+        "country": "Negara",
+        "language": "Bahasa",
+        "cast_header": "🙏 Info Cast",
+        "directors": "Sutradara",
+        "writers": "Penulis",
+        "cast": "Pemeran",
+        "plot": "📜 Plot",
+        "keywords": "🏷 Kata Kunci",
+        "awards": "🏆 Penghargaan",
+        "availability": "Tersedia di",
+        "imdb_by": "©️ IMDb by",
+    },
+    "en": {
+        "title": "📰 Title",
+        "aka": "🗂 AKA",
+        "duration": "Duration",
+        "category": "Category",
+        "rating": "Rating",
+        "release": "Release",
+        "genre": "Genre",
+        "country": "Country",
+        "language": "Language",
+        "cast_header": "🙏 Cast Info",
+        "directors": "Director",
+        "writers": "Writer",
+        "cast": "Stars",
+        "plot": "📜 Summary",
+        "keywords": "🏷 Keywords",
+        "awards": "🏆 Awards",
+        "availability": "Available On",
+        "imdb_by": "©️ IMDb by",
+    },
+}
+
+
+def _compose_default_caption(
+    context: dict, layout: dict, locale: str
+) -> str:
+    labels = IMDB_FIELD_LABELS["id" if locale == "id" else "en"]
+    res = ""
+    if layout.get("title"):
+        title_markup = context.get("title_link") or html.escape(
+            context.get("title_with_year") or context.get("title") or "N/A"
+        )
+        type_value = html.escape(context.get("type") or "N/A")
+        res += f"<b>{labels['title']}:</b> {title_markup} (<code>{type_value}</code>)\n"
+        if context.get("aka"):
+            res += f"<b>{labels['aka']}:</b> <code>{html.escape(context['aka'])}</code>\n\n"
+        else:
+            res += "\n"
+    if layout.get("duration") and context.get("duration"):
+        res += (
+            f"<b>{labels['duration']}:</b> "
+            f"<code>{html.escape(context['duration'])}</code>\n"
+        )
+    if layout.get("category") and context.get("category"):
+        res += (
+            f"<b>{labels['category']}:</b> "
+            f"<code>{html.escape(context['category'])}</code> \n"
+        )
+    if layout.get("rating") and (
+        context.get("rating_text") or context.get("rating_value")
+    ):
+        rating_line = context.get("rating_text")
+        if not rating_line:
+            rating_line = context.get("rating_value") or ""
+            if context.get("rating_count"):
+                rating_line = (
+                    f"{rating_line}/10 ({context['rating_count']} votes)"
+                )
+        res += (
+            f"<b>{labels['rating']}:</b> "
+            f"<code>{html.escape(rating_line)}</code>\n"
+        )
+    if layout.get("release") and (
+        context.get("release_link") or context.get("release")
+    ):
+        release_markup = (
+            context.get("release_link")
+            or html.escape(context.get("release"))
+        )
+        res += f"<b>{labels['release']}:</b> {release_markup}\n"
+    if layout.get("genre") and context.get("genres"):
+        res += f"<b>{labels['genre']}:</b> {html.escape(context['genres'])}\n"
+    if layout.get("country") and context.get("countries"):
+        res += (
+            f"<b>{labels['country']}:</b> "
+            f"{html.escape(context['countries'])}\n"
+        )
+    if layout.get("language") and context.get("languages"):
+        res += (
+            f"<b>{labels['language']}:</b> "
+            f"{html.escape(context['languages'])}\n"
+        )
+    if layout.get("cast_info") and (
+        context.get("directors")
+        or context.get("writers")
+        or context.get("cast")
+    ):
+        res += f"\n<b>{labels['cast_header']}:</b>\n"
+        if context.get("directors"):
+            res += (
+                f"<b>{labels['directors']}:</b> "
+                f"{context['directors']}\n"
+            )
+        if context.get("writers"):
+            res += (
+                f"<b>{labels['writers']}:</b> "
+                f"{context['writers']}\n"
+            )
+        if context.get("cast"):
+            res += (
+                f"<b>{labels['cast']}:</b> "
+                f"{context['cast']}\n\n"
+            )
+    if layout.get("plot") and context.get("plot"):
+        res += (
+            f"<b>{labels['plot']}:</b>\n"
+            f"<blockquote><code>{html.escape(context['plot'])}</code></blockquote>\n\n"
+        )
+    if layout.get("keywords") and context.get("keywords"):
+        res += (
+            f"<b>{labels['keywords']}:</b>\n"
+            f"<blockquote>{html.escape(context['keywords'])}</blockquote>\n"
+        )
+    if layout.get("awards") and context.get("awards"):
+        res += (
+            f"<b>{labels['awards']}:</b>\n"
+            f"<blockquote><code>{html.escape(context['awards'])}</code></blockquote>\n"
+        )
+    if layout.get("availability") and context.get("availability"):
+        res += f"{labels['availability']}:\n{context['availability']}\n"
+    if layout.get("imdb_by") and context.get("imdb_by"):
+        res += f"<b>{labels['imdb_by']}</b> {context['imdb_by']}"
+    return res or IMDB_EMPTY_LAYOUT_NOTICE["id" if locale == "id" else "en"]
+
+
+async def _edit_imdb_result_message(
+    query: CallbackQuery,
+    caption: str,
+    thumb: Optional[str],
+    markup: Optional[InlineKeyboardMarkup],
+) -> None:
+    if thumb:
+        try:
+            await query.message.edit_media(
+                InputMediaPhoto(
+                    thumb, caption=caption, parse_mode=enums.ParseMode.HTML
+                ),
+                reply_markup=markup,
+            )
+            return
+        except (PhotoInvalidDimensions, WebpageMediaEmpty):
+            poster = thumb.replace(".jpg", "._V1_UX360.jpg")
+            await query.message.edit_media(
+                InputMediaPhoto(
+                    poster, caption=caption, parse_mode=enums.ParseMode.HTML
+                ),
+                reply_markup=markup,
+            )
+            return
+        except (
+            MediaEmpty,
+            MediaCaptionTooLong,
+            WebpageCurlFailed,
+            MessageNotModified,
+        ):
+            await query.message.reply(
+                caption, parse_mode=enums.ParseMode.HTML, reply_markup=markup
+            )
+            return
+        except Exception as err:
+            LOGGER.error(f"Error while displaying IMDB Data. ERROR: {err}")
+    with contextlib.suppress(MessageIdInvalid, MessageNotModified):
+        await query.message.edit_caption(
+            caption, parse_mode=enums.ParseMode.HTML, reply_markup=markup
+        )
+
+
 # IMDB Choose Language
 @app.on_cmd("imdb")
 async def imdb_choose(_, ctx: Message):
@@ -418,6 +895,94 @@ async def imdb_settings_cmd(_, message: Message):
     )
 
 
+async def _send_template_instructions(message: Message, user_id: int) -> None:
+    template = await get_custom_imdb_template(user_id)
+    status = "Aktif ✅" if template else "Belum diatur ❌"
+    preview = ""
+    if template:
+        snippet = html.escape(template[:800])
+        preview = f"\n\n<b>Template Saat Ini:</b>\n<code>{snippet}</code>"
+    text = (
+        "<b>Custom Layout IMDb</b>\n"
+        f"Status: <b>{status}</b>\n\n"
+        "<b>Perintah:</b>\n"
+        "• <code>/imdbtemplate set</code> + template di pesan yang sama.\n"
+        "• Atau balas pesan berisi template dengan <code>/imdbtemplate set</code>.\n"
+        "• <code>/imdbtemplate remove</code> untuk menghapus, "
+        "<code>/imdbtemplate show</code> untuk melihat template.\n"
+        "• Tombol dapat dibuat dengan format <code>[Label](https://contoh.com)</code>.\n\n"
+        "<b>Placeholder:</b>\n"
+        f"{PLACEHOLDER_HELP_TEXT}"
+        f"{preview}"
+    )
+    await message.reply_msg(
+        text,
+        parse_mode=enums.ParseMode.HTML,
+        disable_web_page_preview=True,
+    )
+
+
+@app.on_cmd("imdbtemplate")
+async def imdb_template_cmd(_, message: Message):
+    if message.sender_chat:
+        return await message.reply_msg(
+            "Cannot identify user, please use in private chat.", del_in=7
+        )
+    if not message.from_user:
+        return
+    user_id = message.from_user.id
+    raw = message.text or message.caption or ""
+    parts = raw.split(None, 2)
+    if len(parts) == 1:
+        return await _send_template_instructions(message, user_id)
+    action = parts[1].lower()
+    if action in {"set", "save"}:
+        template_body = parts[2] if len(parts) > 2 else None
+        if not template_body and message.reply_to_message:
+            template_body = (
+                message.reply_to_message.text
+                or message.reply_to_message.caption
+            )
+        if not template_body or not template_body.strip():
+            return await message.reply_msg(
+                "Silakan tulis template setelah perintah atau balas pesan yang "
+                "berisi template.",
+                del_in=10,
+            )
+        template_body = template_body.strip()
+        if len(template_body) > 3500:
+            return await message.reply_msg(
+                "Template terlalu panjang. Maksimal 3500 karakter.",
+                del_in=10,
+            )
+        await set_custom_imdb_template(user_id, template_body)
+        return await message.reply_msg(
+            "Custom layout IMDb tersimpan. Gunakan /imdb untuk mencoba.",
+            del_in=8,
+        )
+    if action in {"remove", "reset", "clear", "delete"}:
+        await clear_custom_imdb_template(user_id)
+        return await message.reply_msg(
+            "Template custom telah dihapus.", del_in=8
+        )
+    if action in {"show", "view"}:
+        template = await get_custom_imdb_template(user_id)
+        if not template:
+            return await message.reply_msg(
+                "Belum ada template custom yang tersimpan.", del_in=8
+            )
+        return await message.reply_msg(
+            f"<b>Template Saat Ini:</b>\n<code>{html.escape(template)}</code>",
+            parse_mode=enums.ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
+    await message.reply_msg(
+        "Perintah tidak dikenal. Kirim <code>/imdbtemplate</code> untuk panduan.",
+        parse_mode=enums.ParseMode.HTML,
+        del_in=8,
+    )
+
+
 @app.on_cb("imdbsettings")
 async def imdb_settings_callback(_, query: CallbackQuery):
     _, uid = query.data.split("#")
@@ -437,7 +1002,8 @@ async def imdb_layout_menu(_, query: CallbackQuery):
     if query.from_user.id != int(uid):
         return await query.answer("Access Denied!", True)
     layout = await get_imdb_layout(query.from_user.id)
-    caption = _build_layout_caption(layout)
+    custom_active = bool(await get_custom_imdb_template(query.from_user.id))
+    caption = _build_layout_caption(layout, custom_active)
     keyboard = _build_layout_keyboard(query.from_user.id, layout)
     with contextlib.suppress(MessageIdInvalid, MessageNotModified):
         await query.message.edit_caption(caption, reply_markup=keyboard)
@@ -452,7 +1018,8 @@ async def imdb_layout_toggle(_, query: CallbackQuery):
         layout = await toggle_imdb_layout(query.from_user.id, field)
     except KeyError:
         return await query.answer("Invalid field!", True)
-    caption = _build_layout_caption(layout)
+    custom_active = bool(await get_custom_imdb_template(query.from_user.id))
+    caption = _build_layout_caption(layout, custom_active)
     keyboard = _build_layout_keyboard(query.from_user.id, layout)
     with contextlib.suppress(MessageIdInvalid, MessageNotModified):
         await query.message.edit_caption(caption, reply_markup=keyboard)
@@ -468,7 +1035,8 @@ async def imdb_layout_reset_btn(_, query: CallbackQuery):
     if query.from_user.id != int(uid):
         return await query.answer("Access Denied!", True)
     layout = await reset_imdb_layout(query.from_user.id)
-    caption = _build_layout_caption(layout)
+    custom_active = bool(await get_custom_imdb_template(query.from_user.id))
+    caption = _build_layout_caption(layout, custom_active)
     keyboard = _build_layout_keyboard(query.from_user.id, layout)
     with contextlib.suppress(MessageIdInvalid, MessageNotModified):
         await query.message.edit_caption(caption, reply_markup=keyboard)
@@ -783,183 +1351,54 @@ async def imdbcari(_, query: CallbackQuery):
 
 @app.on_cb("imdbres_id")
 async def imdb_id_callback(self: Client, query: CallbackQuery):
-    i, userid, movie = query.data.split("#")
+    _, userid, movie = query.data.split("#")
     if query.from_user.id != int(userid):
-        return await query.answer("Akses Ditolak!", True)
+        return await query.answer("?? Akses Ditolak!", True)
     with contextlib.redirect_stdout(sys.stderr):
         try:
-            await query.message.edit_caption("⏳ Permintaan kamu sedang diproses.. ")
+            await query.message.edit_caption("<i>?? Permintaan kamu sedang diproses.. </i>")
             imdb_url = f"https://www.imdb.com/title/tt{movie}/"
             sop, r_json = await _get_imdb_page(imdb_url)
             ott = await search_jw(
                 r_json.get("alternateName") or r_json.get("name"), "ID"
             )
             layout = await get_imdb_layout(query.from_user.id)
-            typee = r_json.get("@type", "")
-            tahun = (
-                re.findall(r"\d{4}\W\d{4}|\d{4}-?", sop.title.text)[0]
-                if re.findall(r"\d{4}\W\d{4}|\d{4}-?", sop.title.text)
-                else "N/A"
+            custom_template = await get_custom_imdb_template(query.from_user.id)
+            context = await _build_imdb_context(
+                self, sop, r_json, imdb_url, ott, "id", f"tt{movie}"
             )
-            parts = []
-            if layout.get("title"):
-                title_block = (
-                    f"<b>📹 Judul:</b> <a href='{imdb_url}'>{r_json.get('name')} "
-                    f"[{tahun}]</a> (<code>{typee}</code>)\n"
-                )
-                if aka := r_json.get("alternateName"):
-                    title_block += f"<b>📢 AKA:</b> <code>{aka}</code>\n\n"
-                else:
-                    title_block += "\n"
-                parts.append(title_block)
-            if layout.get("duration"):
-                durasi = sop.select('li[data-testid="title-techspec_runtime"]')
-                if durasi:
-                    runtime_text = (
-                        durasi[0]
-                        .find(class_="ipc-metadata-list-item__content-container")
-                        .text
-                    )
-                    translated = (await gtranslate(runtime_text, "auto", "id")).text
-                    parts.append(f"<b>Durasi:</b> <code>{translated}</code>\n")
-            if layout.get("category") and (kategori := r_json.get("contentRating")):
-                parts.append(f"<b>Kategori:</b> <code>{kategori}</code> \n")
-            if layout.get("rating") and (rating := r_json.get("aggregateRating")):
-                parts.append(
-                    f"<b>Peringkat:</b> <code>{rating['ratingValue']}⭐️ dari "
-                    f"{rating['ratingCount']} pengguna</code>\n"
-                )
-            if layout.get("release"):
-                release = sop.select('li[data-testid="title-details-releasedate"]')
-                if release:
-                    rilis_node = release[0].find(
-                        class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
-                    )
-                    if rilis_node:
-                        rilis = rilis_node.text
-                        rilis_url = rilis_node["href"]
-                        parts.append(
-                            f"<b>Rilis:</b> "
-                            f"<a href='https://www.imdb.com{rilis_url}'>{rilis}</a>\n"
-                        )
-            if layout.get("genre") and (genres := r_json.get("genre")):
-                genre_str = "".join(
-                    f"{GENRES_EMOJI[g]} #{g.replace('-', '_').replace(' ', '_')}, "
-                    if g in GENRES_EMOJI
-                    else f"#{g.replace('-', '_').replace(' ', '_')}, "
-                    for g in genres
-                )
-                parts.append(f"<b>Genre:</b> {genre_str[:-2]}\n")
-            if layout.get("country"):
-                negara = sop.select('li[data-testid="title-details-origin"]')
-                if negara:
-                    country = "".join(
-                        f"{demoji(c.text)} #{c.text.replace(' ', '_').replace('-', '_')}, "
-                        for c in negara[0].findAll(
-                            class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
-                        )
-                    )
-                    if country:
-                        parts.append(f"<b>Negara:</b> {country[:-2]}\n")
-            if layout.get("language"):
-                bahasa = sop.select('li[data-testid="title-details-languages"]')
-                if bahasa:
-                    language = "".join(
-                        f"#{lang.text.replace(' ', '_').replace('-', '_')}, "
-                        for lang in bahasa[0].findAll(
-                            class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
-                        )
-                    )
-                    if language:
-                        parts.append(f"<b>Bahasa:</b> {language[:-2]}\n")
-            if layout.get("cast_info"):
-                people = _extract_people_from_imdb(sop, r_json)
-                if any(people.values()):
-                    cast_block = "\n<b>🙎 Info Cast:</b>\n"
-                    if people["directors"]:
-                        cast_block += (
-                            f"<b>Sutradara:</b> "
-                            f"{_format_people_list(people['directors'])}\n"
-                        )
-                    if people["writers"]:
-                        cast_block += (
-                            f"<b>Penulis:</b> "
-                            f"{_format_people_list(people['writers'])}\n"
-                        )
-                    if people["cast"]:
-                        cast_block += (
-                            f"<b>Pemeran:</b> "
-                            f"{_format_people_list(people['cast'], limit=10)}\n\n"
-                        )
-                    parts.append(cast_block)
-            if layout.get("plot") and (deskripsi := r_json.get("description")):
-                summary = (await gtranslate(deskripsi, "auto", "id")).text
-                parts.append(
-                    f"<b>📜 Plot:</b>\n<blockquote><code>{summary}</code></blockquote>\n\n"
-                )
-            if layout.get("keywords") and (keywd := r_json.get("keywords")):
-                key_ = "".join(
-                    f"#{i.replace(' ', '_').replace('-', '_')}, "
-                    for i in keywd.split(",")
-                )
-                parts.append(
-                    f"<b>🔥 Kata Kunci:</b>\n<blockquote>{key_[:-2]}</blockquote>\n"
-                )
-            if layout.get("awards"):
-                award = sop.select('li[data-testid="award_information"]')
-                if award:
-                    awards = (
-                        award[0]
-                        .find(class_="ipc-metadata-list-item__list-content-item")
-                        .text
-                    )
-                    translated_award = (await gtranslate(awards, "auto", "id")).text
-                    parts.append(
-                        f"<b>🏆 Penghargaan:</b>\n"
-                        f"<blockquote><code>{translated_award}</code></blockquote>\n"
-                    )
-            if layout.get("availability") and ott:
-                parts.append(f"Tersedia di:\n{ott}\n")
-            if layout.get("imdb_by"):
-                parts.append(f"<b>©️ IMDb by</b> @{self.me.username}")
-            if not parts:
-                parts.append(IMDB_EMPTY_LAYOUT_NOTICE["id"])
-            res_str = "".join(parts)
-            trailer = r_json.get("trailer") or {}
-            markup = _build_imdb_action_markup(layout, imdb_url, trailer.get("url"))
-            if thumb := r_json.get("image"):
+            caption = ""
+            markup = None
+            if custom_template:
                 try:
-                    await query.message.edit_media(
-                        InputMediaPhoto(
-                            thumb, caption=res_str, parse_mode=enums.ParseMode.HTML
-                        ),
-                        reply_markup=markup,
+                    caption, markup = _render_custom_template(
+                        custom_template, context
                     )
-                except (PhotoInvalidDimensions, WebpageMediaEmpty):
-                    poster = thumb.replace(".jpg", "._V1_UX360.jpg")
-                    await query.message.edit_media(
-                        InputMediaPhoto(
-                            poster, caption=res_str, parse_mode=enums.ParseMode.HTML
-                        ),
-                        reply_markup=markup,
+                    if not caption:
+                        caption = (
+                            context.get("title_link")
+                            or context.get("title_with_year")
+                            or "IMDb Result"
+                        )
+                except ValueError as exc:
+                    LOGGER.warning(
+                        "Invalid IMDb custom template for %s: %s",
+                        query.from_user.id,
+                        exc,
                     )
-                except (
-                    MediaEmpty,
-                    MediaCaptionTooLong,
-                    WebpageCurlFailed,
-                    MessageNotModified,
-                ):
-                    await query.message.reply(
-                        res_str, parse_mode=enums.ParseMode.HTML, reply_markup=markup
+                    await query.answer(
+                        "Template IMDb kamu error. Cek /imdbtemplate untuk memperbaiki.",
+                        show_alert=True,
                     )
-                except Exception as err:
-                    LOGGER.error(
-                        f"Terjadi error saat menampilkan data IMDB. ERROR: {err}"
-                    )
-            else:
-                await query.message.edit_caption(
-                    res_str, parse_mode=enums.ParseMode.HTML, reply_markup=markup
+                    caption = ""
+                    markup = None
+            if not caption:
+                caption = _compose_default_caption(context, layout, "id")
+                markup = _build_imdb_action_markup(
+                    layout, imdb_url, context.get("trailer_url")
                 )
+            thumb = r_json.get("image")
+            await _edit_imdb_result_message(query, caption, thumb, markup)
         except httpx.HTTPError as exc:
             await query.message.edit_caption(
                 f"HTTP Exception for IMDB Search - <code>{exc}</code>"
@@ -971,181 +1410,56 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
         except (MessageNotModified, MessageIdInvalid):
             pass
 
-
 @app.on_cb("imdbres_en")
 async def imdb_en_callback(self: Client, query: CallbackQuery):
-    i, userid, movie = query.data.split("#")
+    _, userid, movie = query.data.split("#")
     if query.from_user.id != int(userid):
-        return await query.answer("Access Denied!", True)
+        return await query.answer("?? Access Denied!", True)
     with contextlib.redirect_stdout(sys.stderr):
         try:
-            await query.message.edit_caption("<i>⏳ Getting IMDb source..</i>")
+            await query.message.edit_caption("<i>?? Getting IMDb source..</i>")
             imdb_url = f"https://www.imdb.com/title/tt{movie}/"
             sop, r_json = await _get_imdb_page(imdb_url)
             ott = await search_jw(
                 r_json.get("alternateName") or r_json.get("name"), "US"
             )
             layout = await get_imdb_layout(query.from_user.id)
-            typee = r_json.get("@type", "")
-            tahun = (
-                re.findall(r"\d{4}\W\d{4}|\d{4}-?", sop.title.text)[0]
-                if re.findall(r"\d{4}\W\d{4}|\d{4}-?", sop.title.text)
-                else "N/A"
+            custom_template = await get_custom_imdb_template(query.from_user.id)
+            context = await _build_imdb_context(
+                self, sop, r_json, imdb_url, ott, "en", f"tt{movie}"
             )
-            parts = []
-            if layout.get("title"):
-                title_block = (
-                    f"<b>📹 Judul:</b> <a href='{imdb_url}'>{r_json.get('name')} "
-                    f"[{tahun}]</a> (<code>{typee}</code>)\n"
-                )
-                if aka := r_json.get("alternateName"):
-                    title_block += f"<b>📢 AKA:</b> <code>{aka}</code>\n\n"
-                else:
-                    title_block += "\n"
-                parts.append(title_block)
-            if layout.get("duration"):
-                durasi = sop.select('li[data-testid="title-techspec_runtime"]')
-                if durasi:
-                    runtime_text = (
-                        durasi[0]
-                        .find(class_="ipc-metadata-list-item__content-container")
-                        .text
-                    )
-                    parts.append(f"<b>Duration:</b> <code>{runtime_text}</code>\n")
-            if layout.get("category") and (kategori := r_json.get("contentRating")):
-                parts.append(f"<b>Category:</b> <code>{kategori}</code> \n")
-            if layout.get("rating") and (rating := r_json.get("aggregateRating")):
-                parts.append(
-                    f"<b>Rating:</b> <code>{rating['ratingValue']}⭐️ from "
-                    f"{rating['ratingCount']} users</code>\n"
-                )
-            if layout.get("release"):
-                release = sop.select('li[data-testid="title-details-releasedate"]')
-                if release:
-                    rilis_node = release[0].find(
-                        class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
-                    )
-                    if rilis_node:
-                        rilis = rilis_node.text
-                        rilis_url = rilis_node["href"]
-                        parts.append(
-                            f"<b>Release:</b> "
-                            f"<a href='https://www.imdb.com{rilis_url}'>{rilis}</a>\n"
-                        )
-            if layout.get("genre") and (genres := r_json.get("genre")):
-                genre_str = "".join(
-                    f"{GENRES_EMOJI[g]} #{g.replace('-', '_').replace(' ', '_')}, "
-                    if g in GENRES_EMOJI
-                    else f"#{g.replace('-', '_').replace(' ', '_')}, "
-                    for g in genres
-                )
-                parts.append(f"<b>Genre:</b> {genre_str[:-2]}\n")
-            if layout.get("country"):
-                negara = sop.select('li[data-testid="title-details-origin"]')
-                if negara:
-                    country = "".join(
-                        f"{demoji(c.text)} #{c.text.replace(' ', '_').replace('-', '_')}, "
-                        for c in negara[0].findAll(
-                            class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
-                        )
-                    )
-                    if country:
-                        parts.append(f"<b>Country:</b> {country[:-2]}\n")
-            if layout.get("language"):
-                bahasa = sop.select('li[data-testid="title-details-languages"]')
-                if bahasa:
-                    language = "".join(
-                        f"#{lang.text.replace(' ', '_').replace('-', '_')}, "
-                        for lang in bahasa[0].findAll(
-                            class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
-                        )
-                    )
-                    if language:
-                        parts.append(f"<b>Language:</b> {language[:-2]}\n")
-            if layout.get("cast_info"):
-                people = _extract_people_from_imdb(sop, r_json)
-                if any(people.values()):
-                    cast_block = "\n<b>🙎 Cast Info:</b>\n"
-                    if people["directors"]:
-                        cast_block += (
-                            f"<b>Director:</b> "
-                            f"{_format_people_list(people['directors'])}\n"
-                        )
-                    if people["writers"]:
-                        cast_block += (
-                            f"<b>Writer:</b> "
-                            f"{_format_people_list(people['writers'])}\n"
-                        )
-                    if people["cast"]:
-                        cast_block += (
-                            f"<b>Stars:</b> "
-                            f"{_format_people_list(people['cast'], limit=10)}\n\n"
-                        )
-                    parts.append(cast_block)
-            if layout.get("plot") and (description := r_json.get("description")):
-                parts.append(
-                    f"<b>📜 Summary:</b>\n<blockquote><code>{description}</code></blockquote>\n\n"
-                )
-            if layout.get("keywords") and (keywd := r_json.get("keywords")):
-                key_ = "".join(
-                    f"#{i.replace(' ', '_').replace('-', '_')}, "
-                    for i in keywd.split(",")
-                )
-                parts.append(
-                    f"<b>🔥 Keywords:</b>\n<blockquote>{key_[:-2]}</blockquote>\n"
-                )
-            if layout.get("awards"):
-                award = sop.select('li[data-testid="award_information"]')
-                if award:
-                    awards = (
-                        award[0]
-                        .find(class_="ipc-metadata-list-item__list-content-item")
-                        .text
-                    )
-                    parts.append(
-                        f"<b>🏆 Awards:</b>\n"
-                        f"<blockquote><code>{awards}</code></blockquote>\n"
-                    )
-            if layout.get("availability") and ott:
-                parts.append(f"Available On:\n{ott}\n")
-            if layout.get("imdb_by"):
-                parts.append(f"<b>©️ IMDb by</b> @{self.me.username}")
-            if not parts:
-                parts.append(IMDB_EMPTY_LAYOUT_NOTICE["en"])
-            res_str = "".join(parts)
-            trailer = r_json.get("trailer") or {}
-            markup = _build_imdb_action_markup(layout, imdb_url, trailer.get("url"))
-            if thumb := r_json.get("image"):
+            caption = ""
+            markup = None
+            if custom_template:
                 try:
-                    await query.message.edit_media(
-                        InputMediaPhoto(
-                            thumb, caption=res_str, parse_mode=enums.ParseMode.HTML
-                        ),
-                        reply_markup=markup,
+                    caption, markup = _render_custom_template(
+                        custom_template, context
                     )
-                except (PhotoInvalidDimensions, WebpageMediaEmpty):
-                    poster = thumb.replace(".jpg", "._V1_UX360.jpg")
-                    await query.message.edit_media(
-                        InputMediaPhoto(
-                            poster, caption=res_str, parse_mode=enums.ParseMode.HTML
-                        ),
-                        reply_markup=markup,
+                    if not caption:
+                        caption = (
+                            context.get("title_link")
+                            or context.get("title_with_year")
+                            or "IMDb Result"
+                        )
+                except ValueError as exc:
+                    LOGGER.warning(
+                        "Invalid IMDb custom template for %s: %s",
+                        query.from_user.id,
+                        exc,
                     )
-                except (
-                    MediaCaptionTooLong,
-                    WebpageCurlFailed,
-                    MediaEmpty,
-                    MessageNotModified,
-                ):
-                    await query.message.reply(
-                        res_str, parse_mode=enums.ParseMode.HTML, reply_markup=markup
+                    await query.answer(
+                        "Custom IMDb template error. Check /imdbtemplate.",
+                        show_alert=True,
                     )
-                except Exception as err:
-                    LOGGER.error(f"Error while displaying IMDB Data. ERROR: {err}")
-            else:
-                await query.message.edit_caption(
-                    res_str, parse_mode=enums.ParseMode.HTML, reply_markup=markup
+                    caption = ""
+                    markup = None
+            if not caption:
+                caption = _compose_default_caption(context, layout, "en")
+                markup = _build_imdb_action_markup(
+                    layout, imdb_url, context.get("trailer_url")
                 )
+            thumb = r_json.get("image")
+            await _edit_imdb_result_message(query, caption, thumb, markup)
         except httpx.HTTPError as exc:
             await query.message.edit_caption(
                 f"HTTP Exception for IMDB Search - <code>{exc}</code>"
@@ -1156,3 +1470,4 @@ async def imdb_en_callback(self: Client, query: CallbackQuery):
             )
         except (MessageNotModified, MessageIdInvalid):
             pass
+

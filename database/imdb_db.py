@@ -92,3 +92,28 @@ async def reset_imdb_layout(user_id: int) -> Dict[str, bool]:
         upsert=True,
     )
     return defaults
+
+
+async def set_custom_imdb_template(user_id: int, template: str) -> None:
+    await imbd_db.update_one(
+        {"user_id": user_id},
+        {
+            "$set": {"custom_layout": template},
+            "$setOnInsert": {"lang": "eng", "layout": DEFAULT_IMDB_LAYOUT.copy()},
+        },
+        upsert=True,
+    )
+
+
+async def get_custom_imdb_template(user_id: int) -> Optional[str]:
+    user = await imbd_db.find_one(
+        {"user_id": user_id}, {"custom_layout": 1, "_id": 0}
+    )
+    return (user or {}).get("custom_layout")
+
+
+async def clear_custom_imdb_template(user_id: int) -> None:
+    await imbd_db.update_one(
+        {"user_id": user_id},
+        {"$unset": {"custom_layout": ""}},
+    )
