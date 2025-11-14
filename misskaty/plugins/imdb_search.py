@@ -66,22 +66,22 @@ IMDB_HEADERS = {
 SOLVER_API_URL = environ.get("SOLVER_API_URL", "https://solver.pika.web.id/")
 IMDB_SPLASH_IMAGE = "https://img.yasirweb.eu.org/file/270955ef0d1a8a16831a9.jpg"
 IMDB_LAYOUT_FIELDS = [
-    ("title", "🎬 Judul / Title"),
-    ("duration", "⏱ Durasi / Duration"),
-    ("category", "📛 Kategori / Category"),
-    ("rating", "⭐️ Peringkat / Rating"),
-    ("release", "🗓 Rilis / Release"),
-    ("genre", "🎭 Genre"),
-    ("country", "🌍 Negara / Country"),
-    ("language", "🗣 Bahasa / Language"),
-    ("cast_info", "🎭 Info Cast / Cast Info"),
-    ("plot", "📜 Plot / Summary"),
-    ("keywords", "🏷 Kata Kunci / Keywords"),
-    ("awards", "🏆 Penghargaan / Awards"),
-    ("availability", "📺 Tersedia di / Available On"),
-    ("imdb_by", "🤖 IMDb By Tagline"),
-    ("button_open_imdb", "🔗 Tombol Open IMDb"),
-    ("button_trailer", "🎞 Tombol Trailer"),
+    ("title", "Judul"),
+    ("duration", "Durasi"),
+    ("category", "Kategori"),
+    ("rating", "Peringkat"),
+    ("release", "Rilis"),
+    ("genre", "Genre"),
+    ("country", "Negara"),
+    ("language", "Bahasa"),
+    ("cast_info", "Info Cast"),
+    ("plot", "Plot"),
+    ("keywords", "Kata Kunci"),
+    ("awards", "Penghargaan"),
+    ("availability", "Tersedia di"),
+    ("imdb_by", "IMDb By"),
+    ("button_open_imdb", "Open IMDb"),
+    ("button_trailer", "Trailer"),
 ]
 IMDB_LAYOUT_LABELS = dict(IMDB_LAYOUT_FIELDS)
 IMDB_BUTTON_OPEN_TEXT = "ðŸŽ¬ Open IMDB"
@@ -898,22 +898,22 @@ async def imdb_settings_cmd(_, message: Message):
 async def _send_template_instructions(message: Message, user_id: int) -> None:
     template = await get_custom_imdb_template(user_id)
     status = "Aktif ✅" if template else "Belum diatur ❌"
-    preview = ""
+    #preview = ""
     if template:
         snippet = html.escape(template[:800])
-        preview = f"\n\n<b>Template Saat Ini:</b>\n<code>{snippet}</code>"
+        #preview = f"\n\n<b>Template Saat Ini:</b>\n<code>{snippet}</code>"
     text = (
         "<b>Custom Layout IMDb</b>\n"
         f"Status: <b>{status}</b>\n\n"
         "<b>Perintah:</b>\n"
         "• <code>/imdbtemplate set</code> + template di pesan yang sama.\n"
         "• Atau balas pesan berisi template dengan <code>/imdbtemplate set</code>.\n"
-        "• <code>/imdbtemplate remove</code> untuk menghapus, "
-        "<code>/imdbtemplate show</code> untuk melihat template.\n"
+        "• <code>/imdbtemplate remove</code> untuk menghapus.\n"
+        "• <code>/imdbtemplate show</code> untuk melihat template.\n"
         "• Tombol dapat dibuat dengan format <code>[Label](https://contoh.com)</code>.\n\n"
         "<b>Placeholder:</b>\n"
         f"{PLACEHOLDER_HELP_TEXT}"
-        f"{preview}"
+        #f"{preview}"
     )
     await message.reply_msg(
         text,
@@ -1353,10 +1353,10 @@ async def imdbcari(_, query: CallbackQuery):
 async def imdb_id_callback(self: Client, query: CallbackQuery):
     _, userid, movie = query.data.split("#")
     if query.from_user.id != int(userid):
-        return await query.answer("?? Akses Ditolak!", True)
+        return await query.answer("Akses Ditolak!", True)
     with contextlib.redirect_stdout(sys.stderr):
         try:
-            await query.message.edit_caption("<i>?? Permintaan kamu sedang diproses.. </i>")
+            await query.message.edit_caption("<i>⏳ Permintaan kamu sedang diproses.. </i>")
             imdb_url = f"https://www.imdb.com/title/tt{movie}/"
             sop, r_json = await _get_imdb_page(imdb_url)
             ott = await search_jw(
@@ -1414,10 +1414,10 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
 async def imdb_en_callback(self: Client, query: CallbackQuery):
     _, userid, movie = query.data.split("#")
     if query.from_user.id != int(userid):
-        return await query.answer("?? Access Denied!", True)
+        return await query.answer("Access Denied!", True)
     with contextlib.redirect_stdout(sys.stderr):
         try:
-            await query.message.edit_caption("<i>?? Getting IMDb source..</i>")
+            await query.message.edit_caption("<i>⏳ Getting IMDb source..</i>")
             imdb_url = f"https://www.imdb.com/title/tt{movie}/"
             sop, r_json = await _get_imdb_page(imdb_url)
             ott = await search_jw(
