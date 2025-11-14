@@ -36,7 +36,15 @@ from pyrogram.types import (
     Message,
 )
 
-from database.imdb_db import add_imdbset, is_imdbset, remove_imdbset
+from database.imdb_db import (
+    DEFAULT_IMDB_LAYOUT,
+    add_imdbset,
+    get_imdb_layout,
+    is_imdbset,
+    remove_imdbset,
+    reset_imdb_layout,
+    toggle_imdb_layout,
+)
 from misskaty import app
 from misskaty.helper import GENRES_EMOJI, Cache, fetch, gtranslate, get_random_string, search_jw
 from utils import demoji
@@ -52,6 +60,106 @@ IMDB_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 SOLVER_API_URL = environ.get("SOLVER_API_URL", "https://solver.pika.web.id/")
+IMDB_SPLASH_IMAGE = "https://img.yasirweb.eu.org/file/270955ef0d1a8a16831a9.jpg"
+IMDB_LAYOUT_FIELDS = [
+    ("title", "🎬 Judul / Title"),
+    ("duration", "⏱ Durasi / Duration"),
+    ("category", "📛 Kategori / Category"),
+    ("rating", "⭐️ Peringkat / Rating"),
+    ("release", "🗓 Rilis / Release"),
+    ("genre", "🎭 Genre"),
+    ("country", "🌍 Negara / Country"),
+    ("language", "🗣 Bahasa / Language"),
+    ("cast_info", "🎭 Info Cast / Cast Info"),
+    ("plot", "📜 Plot / Summary"),
+    ("keywords", "🏷 Kata Kunci / Keywords"),
+    ("awards", "🏆 Penghargaan / Awards"),
+    ("availability", "📺 Tersedia di / Available On"),
+    ("imdb_by", "🤖 IMDb By Tagline"),
+    ("button_open_imdb", "🔗 Tombol Open IMDb"),
+    ("button_trailer", "🎞 Tombol Trailer"),
+]
+IMDB_LAYOUT_LABELS = dict(IMDB_LAYOUT_FIELDS)
+IMDB_BUTTON_OPEN_TEXT = "ðŸŽ¬ Open IMDB"
+IMDB_BUTTON_TRAILER_TEXT = "â–¶ï¸ Trailer"
+IMDB_EMPTY_LAYOUT_NOTICE = {
+    "id": (
+        "⚠️ Semua bagian detail IMDb kamu sedang disembunyikan. "
+        "Gunakan /imdbset untuk mengaktifkannya lagi."
+    ),
+    "en": (
+        "⚠️ All IMDb detail sections are currently hidden. "
+        "Use /imdbset to enable them again."
+    ),
+}
+
+
+def _build_imdb_settings_caption(user_name: str) -> str:
+    return (
+        f"Halo {user_name}!\n"
+        "Kelola preferensi IMDb Search kamu di sini.\n\n"
+        "• 🎛 Edit Layout → pilih informasi apa saja yang tampil di hasil detail.\n"
+        "• 🚩 Language → set bahasa default saat memakai /imdb.\n\n"
+        "Sentuh salah satu tombol di bawah untuk memulai."
+    )
+
+
+def _build_imdb_settings_keyboard(user_id: int) -> InlineKeyboard:
+    buttons = InlineKeyboard(row_width=1)
+    buttons.row(InlineButton("🎛 Edit Layout", f"imdblayout#{user_id}"))
+    buttons.row(InlineButton("🚩 Language", f"imdbset#{user_id}"))
+    buttons.row(InlineButton("❌ Close", f"close#{user_id}"))
+    return buttons
+
+
+def _build_layout_caption(layout: dict) -> str:
+    total_fields = len(IMDB_LAYOUT_FIELDS)
+    enabled_fields = [
+        label for key, label in IMDB_LAYOUT_FIELDS if layout.get(key, True)
+    ]
+    disabled_fields = [
+        label for key, label in IMDB_LAYOUT_FIELDS if not layout.get(key, True)
+    ]
+    caption = (
+        "Hidupkan atau matikan bagian IMDb berikut sesuai kebutuhanmu.\n"
+        f"Status saat ini: {len(enabled_fields)}/{total_fields} bagian aktif.\n"
+    )
+    if enabled_fields:
+        caption += f"\n✅ Aktif: {', '.join(enabled_fields)}"
+    if disabled_fields:
+        caption += f"\n🚫 Nonaktif: {', '.join(disabled_fields)}"
+    caption += "\n\nTap tombol untuk toggle atau reset jika ingin kembali ke default."
+    return caption
+
+
+def _build_layout_keyboard(user_id: int, layout: dict) -> InlineKeyboard:
+    buttons = InlineKeyboard(row_width=2)
+    for key, label in IMDB_LAYOUT_FIELDS:
+        status = "✅" if layout.get(key, True) else "🚫"
+        buttons.add(
+            InlineButton(
+                f"{status} {label}", f"imdblayouttoggle#{key}#{user_id}"
+            )
+        )
+    buttons.row(
+        InlineButton("🔁 Reset", f"imdblayoutreset#{user_id}"),
+        InlineButton("⬅️ Back", f"imdbsettings#{user_id}"),
+    )
+    buttons.row(InlineButton("❌ Close", f"close#{user_id}"))
+    return buttons
+
+
+def _build_imdb_action_markup(
+    layout: dict, imdb_url: str, trailer_url: Optional[str]
+) -> Optional[InlineKeyboardMarkup]:
+    buttons = []
+    if layout.get("button_open_imdb"):
+        buttons.append(InlineKeyboardButton(IMDB_BUTTON_OPEN_TEXT, url=imdb_url))
+    if layout.get("button_trailer") and trailer_url:
+        buttons.append(InlineKeyboardButton(IMDB_BUTTON_TRAILER_TEXT, url=trailer_url))
+    if buttons:
+        return InlineKeyboardMarkup([buttons])
+    return None
 
 
 def _scrape_imdb_html(imdb_url: str) -> str:
@@ -287,11 +395,81 @@ async def imdb_choose(_, ctx: Message):
     buttons.row(InlineButton("🚩 Set Default Language", f"imdbset#{ctx.from_user.id}"))
     buttons.row(InlineButton("❌ Close", f"close#{ctx.from_user.id}"))
     await ctx.reply_photo(
-        "https://img.yasirweb.eu.org/file/270955ef0d1a8a16831a9.jpg",
+        IMDB_SPLASH_IMAGE,
         caption=f"Hi {ctx.from_user.mention}, Please select the language you want to use on IMDB Search. If you want use default lang for every user, click third button. So no need click select lang if use CMD.\n\nTimeout: 10s",
         reply_markup=buttons,
         quote=True,
     )
+
+
+@app.on_cmd("imdbset")
+async def imdb_settings_cmd(_, message: Message):
+    if message.sender_chat:
+        return await message.reply_msg(
+            "Cannot identify user, please use in private chat.", del_in=7
+        )
+    if not message.from_user:
+        return
+    buttons = _build_imdb_settings_keyboard(message.from_user.id)
+    caption = _build_imdb_settings_caption(message.from_user.mention)
+    await message.reply_photo(
+        IMDB_SPLASH_IMAGE, caption=caption, reply_markup=buttons, quote=True
+    )
+
+
+@app.on_cb("imdbsettings")
+async def imdb_settings_callback(_, query: CallbackQuery):
+    _, uid = query.data.split("#")
+    if query.from_user.id != int(uid):
+        return await query.answer("Access Denied!", True)
+    buttons = _build_imdb_settings_keyboard(query.from_user.id)
+    caption = _build_imdb_settings_caption(query.from_user.mention)
+    with contextlib.suppress(MessageIdInvalid, MessageNotModified):
+        await query.message.edit_caption(caption, reply_markup=buttons)
+
+
+@app.on_cb("imdblayout")
+async def imdb_layout_menu(_, query: CallbackQuery):
+    _, uid = query.data.split("#")
+    if query.from_user.id != int(uid):
+        return await query.answer("Access Denied!", True)
+    layout = await get_imdb_layout(query.from_user.id)
+    caption = _build_layout_caption(layout)
+    keyboard = _build_layout_keyboard(query.from_user.id, layout)
+    with contextlib.suppress(MessageIdInvalid, MessageNotModified):
+        await query.message.edit_caption(caption, reply_markup=keyboard)
+
+
+@app.on_cb("imdblayouttoggle")
+async def imdb_layout_toggle(_, query: CallbackQuery):
+    _, field, uid = query.data.split("#")
+    if query.from_user.id != int(uid):
+        return await query.answer("Access Denied!", True)
+    try:
+        layout = await toggle_imdb_layout(query.from_user.id, field)
+    except KeyError:
+        return await query.answer("Invalid field!", True)
+    caption = _build_layout_caption(layout)
+    keyboard = _build_layout_keyboard(query.from_user.id, layout)
+    with contextlib.suppress(MessageIdInvalid, MessageNotModified):
+        await query.message.edit_caption(caption, reply_markup=keyboard)
+    status = "Aktif" if layout.get(field) else "Nonaktif"
+    await query.answer(
+        f"{IMDB_LAYOUT_LABELS.get(field, field)} → {status}", show_alert=False
+    )
+
+
+@app.on_cb("imdblayoutreset")
+async def imdb_layout_reset_btn(_, query: CallbackQuery):
+    _, uid = query.data.split("#")
+    if query.from_user.id != int(uid):
+        return await query.answer("Access Denied!", True)
+    layout = await reset_imdb_layout(query.from_user.id)
+    caption = _build_layout_caption(layout)
+    keyboard = _build_layout_keyboard(query.from_user.id, layout)
+    with contextlib.suppress(MessageIdInvalid, MessageNotModified):
+        await query.message.edit_caption(caption, reply_markup=keyboard)
+    await query.answer("Layout dikembalikan ke default.", show_alert=True)
 
 
 @app.on_cb("imdbset")
@@ -600,12 +778,11 @@ async def imdbcari(_, query: CallbackQuery):
                     f"Failed when requesting movies title. Maybe got rate limit or down.\n\n<b>ERROR:</b> <code>{err}</code>"
                 )
 
-
 @app.on_cb("imdbres_id")
 async def imdb_id_callback(self: Client, query: CallbackQuery):
     i, userid, movie = query.data.split("#")
     if query.from_user.id != int(userid):
-        return await query.answer("⚠️ Akses Ditolak!", True)
+        return await query.answer("Akses Ditolak!", True)
     with contextlib.redirect_stdout(sys.stderr):
         try:
             await query.message.edit_caption("⏳ Permintaan kamu sedang diproses.. ")
@@ -614,120 +791,139 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
             ott = await search_jw(
                 r_json.get("alternateName") or r_json.get("name"), "ID"
             )
+            layout = await get_imdb_layout(query.from_user.id)
             typee = r_json.get("@type", "")
-            res_str = ""
             tahun = (
                 re.findall(r"\d{4}\W\d{4}|\d{4}-?", sop.title.text)[0]
                 if re.findall(r"\d{4}\W\d{4}|\d{4}-?", sop.title.text)
                 else "N/A"
             )
-            res_str += f"<b>📹 Judul:</b> <a href='{imdb_url}'>{r_json.get('name')} [{tahun}]</a> (<code>{typee}</code>)\n"
-            if aka := r_json.get("alternateName"):
-                res_str += f"<b>📢 AKA:</b> <code>{aka}</code>\n\n"
-            else:
-                res_str += "\n"
-            if durasi := sop.select('li[data-testid="title-techspec_runtime"]'):
-                durasi = (
-                    durasi[0]
-                    .find(class_="ipc-metadata-list-item__content-container")
-                    .text
+            parts = []
+            if layout.get("title"):
+                title_block = (
+                    f"<b>📹 Judul:</b> <a href='{imdb_url}'>{r_json.get('name')} "
+                    f"[{tahun}]</a> (<code>{typee}</code>)\n"
                 )
-                res_str += f"<b>Durasi:</b> <code>{(await gtranslate(durasi, "auto", "id")).text}</code>\n"
-            if kategori := r_json.get("contentRating"):
-                res_str += f"<b>Kategori:</b> <code>{kategori}</code> \n"
-            if rating := r_json.get("aggregateRating"):
-                res_str += f"<b>Peringkat:</b> <code>{rating['ratingValue']}⭐️ dari {rating['ratingCount']} pengguna</code>\n"
-            if release := sop.select('li[data-testid="title-details-releasedate"]'):
-                rilis = (
-                    release[0]
-                    .find(
+                if aka := r_json.get("alternateName"):
+                    title_block += f"<b>📢 AKA:</b> <code>{aka}</code>\n\n"
+                else:
+                    title_block += "\n"
+                parts.append(title_block)
+            if layout.get("duration"):
+                durasi = sop.select('li[data-testid="title-techspec_runtime"]')
+                if durasi:
+                    runtime_text = (
+                        durasi[0]
+                        .find(class_="ipc-metadata-list-item__content-container")
+                        .text
+                    )
+                    translated = (await gtranslate(runtime_text, "auto", "id")).text
+                    parts.append(f"<b>Durasi:</b> <code>{translated}</code>\n")
+            if layout.get("category") and (kategori := r_json.get("contentRating")):
+                parts.append(f"<b>Kategori:</b> <code>{kategori}</code> \n")
+            if layout.get("rating") and (rating := r_json.get("aggregateRating")):
+                parts.append(
+                    f"<b>Peringkat:</b> <code>{rating['ratingValue']}⭐️ dari "
+                    f"{rating['ratingCount']} pengguna</code>\n"
+                )
+            if layout.get("release"):
+                release = sop.select('li[data-testid="title-details-releasedate"]')
+                if release:
+                    rilis_node = release[0].find(
                         class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
                     )
-                    .text
+                    if rilis_node:
+                        rilis = rilis_node.text
+                        rilis_url = rilis_node["href"]
+                        parts.append(
+                            f"<b>Rilis:</b> "
+                            f"<a href='https://www.imdb.com{rilis_url}'>{rilis}</a>\n"
+                        )
+            if layout.get("genre") and (genres := r_json.get("genre")):
+                genre_str = "".join(
+                    f"{GENRES_EMOJI[g]} #{g.replace('-', '_').replace(' ', '_')}, "
+                    if g in GENRES_EMOJI
+                    else f"#{g.replace('-', '_').replace(' ', '_')}, "
+                    for g in genres
                 )
-                rilis_url = release[0].find(
-                    class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
-                )["href"]
-                res_str += f"<b>Rilis:</b> <a href='https://www.imdb.com{rilis_url}'>{rilis}</a>\n"
-            if genre := r_json.get("genre"):
-                genre = "".join(
-                    f"{GENRES_EMOJI[i]} #{i.replace('-', '_').replace(' ', '_')}, "
-                    if i in GENRES_EMOJI
-                    else f"#{i.replace('-', '_').replace(' ', '_')}, "
-                    for i in r_json["genre"]
-                )
-                res_str += f"<b>Genre:</b> {genre[:-2]}\n"
-            if negara := sop.select('li[data-testid="title-details-origin"]'):
-                country = "".join(
-                    f"{demoji(country.text)} #{country.text.replace(' ', '_').replace('-', '_')}, "
-                    for country in negara[0].findAll(
-                        class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
+                parts.append(f"<b>Genre:</b> {genre_str[:-2]}\n")
+            if layout.get("country"):
+                negara = sop.select('li[data-testid="title-details-origin"]')
+                if negara:
+                    country = "".join(
+                        f"{demoji(c.text)} #{c.text.replace(' ', '_').replace('-', '_')}, "
+                        for c in negara[0].findAll(
+                            class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
+                        )
                     )
-                )
-                res_str += f"<b>Negara:</b> {country[:-2]}\n"
-            if bahasa := sop.select('li[data-testid="title-details-languages"]'):
-                language = "".join(
-                    f"#{lang.text.replace(' ', '_').replace('-', '_')}, "
-                    for lang in bahasa[0].findAll(
-                        class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
+                    if country:
+                        parts.append(f"<b>Negara:</b> {country[:-2]}\n")
+            if layout.get("language"):
+                bahasa = sop.select('li[data-testid="title-details-languages"]')
+                if bahasa:
+                    language = "".join(
+                        f"#{lang.text.replace(' ', '_').replace('-', '_')}, "
+                        for lang in bahasa[0].findAll(
+                            class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
+                        )
                     )
-                )
-                res_str += f"<b>Bahasa:</b> {language[:-2]}\n"
-            people = _extract_people_from_imdb(sop, r_json)
-            if any(people.values()):
-                res_str += "\n<b>🙎 Info Cast:</b>\n"
-                if people["directors"]:
-                    res_str += (
-                        f"<b>Sutradara:</b> "
-                        f"{_format_people_list(people['directors'])}\n"
-                    )
-                if people["writers"]:
-                    res_str += (
-                        f"<b>Penulis:</b> "
-                        f"{_format_people_list(people['writers'])}\n"
-                    )
-                if people["cast"]:
-                    res_str += (
-                        f"<b>Pemeran:</b> "
-                        f"{_format_people_list(people['cast'], limit=10)}\n\n"
-                    )
-            if deskripsi := r_json.get("description"):
+                    if language:
+                        parts.append(f"<b>Bahasa:</b> {language[:-2]}\n")
+            if layout.get("cast_info"):
+                people = _extract_people_from_imdb(sop, r_json)
+                if any(people.values()):
+                    cast_block = "\n<b>🙎 Info Cast:</b>\n"
+                    if people["directors"]:
+                        cast_block += (
+                            f"<b>Sutradara:</b> "
+                            f"{_format_people_list(people['directors'])}\n"
+                        )
+                    if people["writers"]:
+                        cast_block += (
+                            f"<b>Penulis:</b> "
+                            f"{_format_people_list(people['writers'])}\n"
+                        )
+                    if people["cast"]:
+                        cast_block += (
+                            f"<b>Pemeran:</b> "
+                            f"{_format_people_list(people['cast'], limit=10)}\n\n"
+                        )
+                    parts.append(cast_block)
+            if layout.get("plot") and (deskripsi := r_json.get("description")):
                 summary = (await gtranslate(deskripsi, "auto", "id")).text
-                res_str += f"<b>📜 Plot:</b>\n<blockquote><code>{summary}</code></blockquote>\n\n"
-            if keywd := r_json.get("keywords"):
+                parts.append(
+                    f"<b>📜 Plot:</b>\n<blockquote><code>{summary}</code></blockquote>\n\n"
+                )
+            if layout.get("keywords") and (keywd := r_json.get("keywords")):
                 key_ = "".join(
                     f"#{i.replace(' ', '_').replace('-', '_')}, "
                     for i in keywd.split(",")
                 )
-                res_str += (
+                parts.append(
                     f"<b>🔥 Kata Kunci:</b>\n<blockquote>{key_[:-2]}</blockquote>\n"
                 )
-            if award := sop.select('li[data-testid="award_information"]'):
-                awards = (
-                    award[0]
-                    .find(class_="ipc-metadata-list-item__list-content-item")
-                    .text
-                )
-                res_str += f"<b>🏆 Penghargaan:</b>\n<blockquote><code>{(await gtranslate(awards, "auto", "id")).text}</code></blockquote>\n"
-            else:
-                res_str += "\n"
-            if ott != "":
-                res_str += f"Tersedia di:\n{ott}\n"
-            res_str += f"<b>©️ IMDb by</b> @{self.me.username}"
-            if trailer := r_json.get("trailer"):
-                trailer_url = trailer["url"]
-                markup = InlineKeyboardMarkup(
-                    [
-                        [
-                            InlineKeyboardButton("🎬 Open IMDB", url=imdb_url),
-                            InlineKeyboardButton("▶️ Trailer", url=trailer_url),
-                        ]
-                    ]
-                )
-            else:
-                markup = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("🎬 Open IMDB", url=imdb_url)]]
-                )
+            if layout.get("awards"):
+                award = sop.select('li[data-testid="award_information"]')
+                if award:
+                    awards = (
+                        award[0]
+                        .find(class_="ipc-metadata-list-item__list-content-item")
+                        .text
+                    )
+                    translated_award = (await gtranslate(awards, "auto", "id")).text
+                    parts.append(
+                        f"<b>🏆 Penghargaan:</b>\n"
+                        f"<blockquote><code>{translated_award}</code></blockquote>\n"
+                    )
+            if layout.get("availability") and ott:
+                parts.append(f"Tersedia di:\n{ott}\n")
+            if layout.get("imdb_by"):
+                parts.append(f"<b>©️ IMDb by</b> @{self.me.username}")
+            if not parts:
+                parts.append(IMDB_EMPTY_LAYOUT_NOTICE["id"])
+            res_str = "".join(parts)
+            trailer = r_json.get("trailer") or {}
+            markup = _build_imdb_action_markup(layout, imdb_url, trailer.get("url"))
             if thumb := r_json.get("image"):
                 try:
                     await query.message.edit_media(
@@ -777,7 +973,7 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
 async def imdb_en_callback(self: Client, query: CallbackQuery):
     i, userid, movie = query.data.split("#")
     if query.from_user.id != int(userid):
-        return await query.answer("⚠️ Access Denied!", True)
+        return await query.answer("Access Denied!", True)
     with contextlib.redirect_stdout(sys.stderr):
         try:
             await query.message.edit_caption("<i>⏳ Getting IMDb source..</i>")
@@ -786,119 +982,136 @@ async def imdb_en_callback(self: Client, query: CallbackQuery):
             ott = await search_jw(
                 r_json.get("alternateName") or r_json.get("name"), "US"
             )
+            layout = await get_imdb_layout(query.from_user.id)
             typee = r_json.get("@type", "")
-            res_str = ""
             tahun = (
                 re.findall(r"\d{4}\W\d{4}|\d{4}-?", sop.title.text)[0]
                 if re.findall(r"\d{4}\W\d{4}|\d{4}-?", sop.title.text)
                 else "N/A"
             )
-            res_str += f"<b>📹 Judul:</b> <a href='{imdb_url}'>{r_json.get('name')} [{tahun}]</a> (<code>{typee}</code>)\n"
-            if aka := r_json.get("alternateName"):
-                res_str += f"<b>📢 AKA:</b> <code>{aka}</code>\n\n"
-            else:
-                res_str += "\n"
-            if durasi := sop.select('li[data-testid="title-techspec_runtime"]'):
-                durasi = (
-                    durasi[0]
-                    .find(class_="ipc-metadata-list-item__content-container")
-                    .text
+            parts = []
+            if layout.get("title"):
+                title_block = (
+                    f"<b>📹 Judul:</b> <a href='{imdb_url}'>{r_json.get('name')} "
+                    f"[{tahun}]</a> (<code>{typee}</code>)\n"
                 )
-                res_str += f"<b>Duration:</b> <code>{durasi}</code>\n"
-            if kategori := r_json.get("contentRating"):
-                res_str += f"<b>Category:</b> <code>{kategori}</code> \n"
-            if rating := r_json.get("aggregateRating"):
-                res_str += f"<b>Rating:</b> <code>{rating['ratingValue']}⭐️ from {rating['ratingCount']} users</code>\n"
-            if release := sop.select('li[data-testid="title-details-releasedate"]'):
-                rilis = (
-                    release[0]
-                    .find(
+                if aka := r_json.get("alternateName"):
+                    title_block += f"<b>📢 AKA:</b> <code>{aka}</code>\n\n"
+                else:
+                    title_block += "\n"
+                parts.append(title_block)
+            if layout.get("duration"):
+                durasi = sop.select('li[data-testid="title-techspec_runtime"]')
+                if durasi:
+                    runtime_text = (
+                        durasi[0]
+                        .find(class_="ipc-metadata-list-item__content-container")
+                        .text
+                    )
+                    parts.append(f"<b>Duration:</b> <code>{runtime_text}</code>\n")
+            if layout.get("category") and (kategori := r_json.get("contentRating")):
+                parts.append(f"<b>Category:</b> <code>{kategori}</code> \n")
+            if layout.get("rating") and (rating := r_json.get("aggregateRating")):
+                parts.append(
+                    f"<b>Rating:</b> <code>{rating['ratingValue']}⭐️ from "
+                    f"{rating['ratingCount']} users</code>\n"
+                )
+            if layout.get("release"):
+                release = sop.select('li[data-testid="title-details-releasedate"]')
+                if release:
+                    rilis_node = release[0].find(
                         class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
                     )
-                    .text
+                    if rilis_node:
+                        rilis = rilis_node.text
+                        rilis_url = rilis_node["href"]
+                        parts.append(
+                            f"<b>Release:</b> "
+                            f"<a href='https://www.imdb.com{rilis_url}'>{rilis}</a>\n"
+                        )
+            if layout.get("genre") and (genres := r_json.get("genre")):
+                genre_str = "".join(
+                    f"{GENRES_EMOJI[g]} #{g.replace('-', '_').replace(' ', '_')}, "
+                    if g in GENRES_EMOJI
+                    else f"#{g.replace('-', '_').replace(' ', '_')}, "
+                    for g in genres
                 )
-                rilis_url = release[0].find(
-                    class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
-                )["href"]
-                res_str += f"<b>Rilis:</b> <a href='https://www.imdb.com{rilis_url}'>{rilis}</a>\n"
-            if genre := r_json.get("genre"):
-                genre = "".join(
-                    f"{GENRES_EMOJI[i]} #{i.replace('-', '_').replace(' ', '_')}, "
-                    if i in GENRES_EMOJI
-                    else f"#{i.replace('-', '_').replace(' ', '_')}, "
-                    for i in r_json["genre"]
+                parts.append(f"<b>Genre:</b> {genre_str[:-2]}\n")
+            if layout.get("country"):
+                negara = sop.select('li[data-testid="title-details-origin"]')
+                if negara:
+                    country = "".join(
+                        f"{demoji(c.text)} #{c.text.replace(' ', '_').replace('-', '_')}, "
+                        for c in negara[0].findAll(
+                            class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
+                        )
+                    )
+                    if country:
+                        parts.append(f"<b>Country:</b> {country[:-2]}\n")
+            if layout.get("language"):
+                bahasa = sop.select('li[data-testid="title-details-languages"]')
+                if bahasa:
+                    language = "".join(
+                        f"#{lang.text.replace(' ', '_').replace('-', '_')}, "
+                        for lang in bahasa[0].findAll(
+                            class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
+                        )
+                    )
+                    if language:
+                        parts.append(f"<b>Language:</b> {language[:-2]}\n")
+            if layout.get("cast_info"):
+                people = _extract_people_from_imdb(sop, r_json)
+                if any(people.values()):
+                    cast_block = "\n<b>🙎 Cast Info:</b>\n"
+                    if people["directors"]:
+                        cast_block += (
+                            f"<b>Director:</b> "
+                            f"{_format_people_list(people['directors'])}\n"
+                        )
+                    if people["writers"]:
+                        cast_block += (
+                            f"<b>Writer:</b> "
+                            f"{_format_people_list(people['writers'])}\n"
+                        )
+                    if people["cast"]:
+                        cast_block += (
+                            f"<b>Stars:</b> "
+                            f"{_format_people_list(people['cast'], limit=10)}\n\n"
+                        )
+                    parts.append(cast_block)
+            if layout.get("plot") and (description := r_json.get("description")):
+                parts.append(
+                    f"<b>📜 Summary:</b>\n<blockquote><code>{description}</code></blockquote>\n\n"
                 )
-                res_str += f"<b>Genre:</b> {genre[:-2]}\n"
-            if negara := sop.select('li[data-testid="title-details-origin"]'):
-                country = "".join(
-                    f"{demoji(country.text)} #{country.text.replace(' ', '_').replace('-', '_')}, "
-                    for country in negara[0].findAll(
-                        class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
-                    )
-                )
-                res_str += f"<b>Country:</b> {country[:-2]}\n"
-            if bahasa := sop.select('li[data-testid="title-details-languages"]'):
-                language = "".join(
-                    f"#{lang.text.replace(' ', '_').replace('-', '_')}, "
-                    for lang in bahasa[0].findAll(
-                        class_="ipc-metadata-list-item__list-content-item ipc-metadata-list-item__list-content-item--link"
-                    )
-                )
-                res_str += f"<b>Language:</b> {language[:-2]}\n"
-            people = _extract_people_from_imdb(sop, r_json)
-            if any(people.values()):
-                res_str += "\n<b>🙎 Cast Info:</b>\n"
-                if people["directors"]:
-                    res_str += (
-                        f"<b>Director:</b> "
-                        f"{_format_people_list(people['directors'])}\n"
-                    )
-                if people["writers"]:
-                    res_str += (
-                        f"<b>Writer:</b> "
-                        f"{_format_people_list(people['writers'])}\n"
-                    )
-                if people["cast"]:
-                    res_str += (
-                        f"<b>Stars:</b> "
-                        f"{_format_people_list(people['cast'], limit=10)}\n\n"
-                    )
-            if description := r_json.get("description"):
-                res_str += f"<b>📜 Summary:</b>\n<blockquote><code>{description}</code></blockquote>\n\n"
-            if r_json.get("keywords"):
+            if layout.get("keywords") and (keywd := r_json.get("keywords")):
                 key_ = "".join(
                     f"#{i.replace(' ', '_').replace('-', '_')}, "
-                    for i in r_json["keywords"].split(",")
+                    for i in keywd.split(",")
                 )
-                res_str += (
+                parts.append(
                     f"<b>🔥 Keywords:</b>\n<blockquote>{key_[:-2]}</blockquote>\n"
                 )
-            if award := sop.select('li[data-testid="award_information"]'):
-                awards = (
-                    award[0]
-                    .find(class_="ipc-metadata-list-item__list-content-item")
-                    .text
-                )
-                res_str += f"<b>🏆 Awards:</b>\n<blockquote><code>{awards}</code></blockquote>\n"
-            else:
-                res_str += "\n"
-            if ott != "":
-                res_str += f"Available On:\n{ott}\n"
-            res_str += f"<b>©️ IMDb by</b> @{self.me.username}"
-            if trailer := r_json.get("trailer"):
-                trailer_url = trailer["url"]
-                markup = InlineKeyboardMarkup(
-                    [
-                        [
-                            InlineKeyboardButton("🎬 Open IMDB", url=imdb_url),
-                            InlineKeyboardButton("▶️ Trailer", url=trailer_url),
-                        ]
-                    ]
-                )
-            else:
-                markup = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("🎬 Open IMDB", url=imdb_url)]]
-                )
+            if layout.get("awards"):
+                award = sop.select('li[data-testid="award_information"]')
+                if award:
+                    awards = (
+                        award[0]
+                        .find(class_="ipc-metadata-list-item__list-content-item")
+                        .text
+                    )
+                    parts.append(
+                        f"<b>🏆 Awards:</b>\n"
+                        f"<blockquote><code>{awards}</code></blockquote>\n"
+                    )
+            if layout.get("availability") and ott:
+                parts.append(f"Available On:\n{ott}\n")
+            if layout.get("imdb_by"):
+                parts.append(f"<b>©️ IMDb by</b> @{self.me.username}")
+            if not parts:
+                parts.append(IMDB_EMPTY_LAYOUT_NOTICE["en"])
+            res_str = "".join(parts)
+            trailer = r_json.get("trailer") or {}
+            markup = _build_imdb_action_markup(layout, imdb_url, trailer.get("url"))
             if thumb := r_json.get("image"):
                 try:
                     await query.message.edit_media(
