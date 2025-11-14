@@ -117,3 +117,28 @@ async def clear_custom_imdb_template(user_id: int) -> None:
         {"user_id": user_id},
         {"$unset": {"custom_layout": ""}},
     )
+
+
+async def set_imdb_by(user_id: int, value: str) -> None:
+    await imbd_db.update_one(
+        {"user_id": user_id},
+        {
+            "$set": {"imdb_by": value},
+            "$setOnInsert": {"lang": "eng", "layout": DEFAULT_IMDB_LAYOUT.copy()},
+        },
+        upsert=True,
+    )
+
+
+async def get_imdb_by(user_id: int) -> Optional[str]:
+    user = await imbd_db.find_one({"user_id": user_id}, {"imdb_by": 1, "_id": 0})
+    if not user:
+        return None
+    return user.get("imdb_by")
+
+
+async def clear_imdb_by(user_id: int) -> None:
+    await imbd_db.update_one(
+        {"user_id": user_id},
+        {"$unset": {"imdb_by": ""}},
+    )

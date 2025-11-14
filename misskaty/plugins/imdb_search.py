@@ -41,12 +41,15 @@ from database.imdb_db import (
     DEFAULT_IMDB_LAYOUT,
     add_imdbset,
     clear_custom_imdb_template,
+    clear_imdb_by,
     get_custom_imdb_template,
+    get_imdb_by,
     get_imdb_layout,
     is_imdbset,
     remove_imdbset,
     reset_imdb_layout,
     set_custom_imdb_template,
+    set_imdb_by,
     toggle_imdb_layout,
 )
 from misskaty import app
@@ -192,6 +195,7 @@ def _build_imdb_settings_caption(user_name: str) -> str:
         "Kelola preferensi IMDb Search kamu di sini.\n\n"
         "• 🎛 Edit Layout → pilih informasi apa saja yang tampil di hasil detail.\n"
         "• 🧩 Custom Layout → pakai template HTML sendiri.\n"
+        "• 📝 IMDb By → atur nama/username yang muncul di kredit.\n"
         "• 🚩 Language → set bahasa default saat memakai /imdb.\n\n"
         "Sentuh salah satu tombol di bawah untuk memulai."
     )
@@ -201,6 +205,7 @@ def _build_imdb_settings_keyboard(user_id: int) -> InlineKeyboard:
     buttons = InlineKeyboard(row_width=1)
     buttons.row(InlineButton("🎛 Edit Layout", f"imdbslayout#{user_id}"))
     buttons.row(InlineButton("🧩 Custom Layout", f"imdbcustom#{user_id}"))
+    buttons.row(InlineButton("📝 IMDb By", f"imdbbycfg#{user_id}"))
     buttons.row(InlineButton("🚩 Language", f"imdbset#{user_id}"))
     buttons.row(InlineButton("❌ Close", f"close#{user_id}"))
     return buttons
@@ -259,6 +264,34 @@ async def _render_custom_layout_menu(query: CallbackQuery, user_id: int) -> None
         )
 
 
+async def _render_imdb_by_menu(query: CallbackQuery, user_id: int) -> None:
+    current = await get_imdb_by(user_id)
+    if current:
+        status = f"Aktif ✅ (<code>{html.escape(current)}</code>)"
+    else:
+        status = "Belum diatur ❌"
+    caption = (
+        "<b>Pengaturan IMDb By</b>\n"
+        f"Status: {status}\n\n"
+        "<b>Cara pakai:</b>\n"
+        "• Kirim <code>/imdbby @usernamekamu</code> atau teks lain.\n"
+        "• Atau balas pesan berisi teks lalu kirim <code>/imdbby</code>.\n"
+        "• Gunakan <code>/imdbby reset</code> untuk kembali ke default bot.\n\n"
+        "Teks ini akan menggantikan label \"IMDb by\" di hasil pencarian."
+    )
+    buttons = InlineKeyboard(row_width=1)
+    if current:
+        buttons.row(InlineButton("🔁 Reset ke Default", f"imdbbyreset#{user_id}"))
+    buttons.row(
+        InlineButton("⬅️ Back", f"imdbsettings#{user_id}"),
+        InlineButton("❌ Close", f"close#{user_id}"),
+    )
+    with contextlib.suppress(MessageIdInvalid, MessageNotModified):
+        await query.message.edit_caption(
+            caption, reply_markup=buttons, parse_mode=enums.ParseMode.HTML
+        )
+
+
 def _build_imdb_action_markup(
     layout: dict, imdb_url: str, trailer_url: Optional[str]
 ) -> Optional[InlineKeyboardMarkup]:
@@ -288,6 +321,24 @@ async def imdb_custom_remove(_, query: CallbackQuery):
     await clear_custom_imdb_template(query.from_user.id)
     await query.answer("Template custom dihapus.", show_alert=True)
     await _render_custom_layout_menu(query, query.from_user.id)
+
+
+@app.on_cb("imdbbycfg")
+async def imdb_by_config(_, query: CallbackQuery):
+    _, uid = query.data.split("#")
+    if query.from_user.id != int(uid):
+        return await query.answer("Access Denied!", True)
+    await _render_imdb_by_menu(query, query.from_user.id)
+
+
+@app.on_cb("imdbbyreset")
+async def imdb_by_reset(_, query: CallbackQuery):
+    _, uid = query.data.split("#")
+    if query.from_user.id != int(uid):
+        return await query.answer("Access Denied!", True)
+    await clear_imdb_by(query.from_user.id)
+    await query.answer("IMDb by disetel ke default.", show_alert=True)
+    await _render_imdb_by_menu(query, query.from_user.id)
 
 
 def _scrape_imdb_html(imdb_url: str) -> str:
@@ -502,6 +553,7 @@ async def _build_imdb_context(
     ott: str,
     locale: str,
     imdb_code: str,
+    imdb_by_override: Optional[str] = None,
 ) -> dict:
     metadata = metadata or {}
     context = {key: "" for key, _ in CUSTOM_TEMPLATE_PLACEHOLDERS}
@@ -523,7 +575,14 @@ async def _build_imdb_context(
     context["availability"] = ott or ""
     context["locale"] = locale
     username = getattr(getattr(client, "me", None), "username", None)
-    context["imdb_by"] = f"@{username}" if username else ""
+    if not username:
+        try:
+            me = await client.get_me()
+            username = me.username
+        except Exception:
+            username = None
+    default_tagline = f"@{username}" if username else ""
+    context["imdb_by"] = imdb_by_override or default_tagline
     runtime_node = soup.select('li[data-testid="title-techspec_runtime"]') if soup else []
     if runtime_node:
         runtime_container = runtime_node[0].find(
@@ -798,7 +857,7 @@ def _compose_default_caption(
     if layout.get("availability") and context.get("availability"):
         res += f"{labels['availability']}:\n{context['availability']}\n"
     if layout.get("imdb_by") and context.get("imdb_by"):
-        res += f"<b>{labels['imdb_by']}</b> {context['imdb_by']}"
+        res += f"<b>{labels['imdb_by']}</b> {html.escape(context['imdb_by'])}"
     return res or IMDB_EMPTY_LAYOUT_NOTICE["id" if locale == "id" else "en"]
 
 
@@ -979,6 +1038,56 @@ async def imdb_template_cmd(_, message: Message):
     await message.reply_msg(
         "Perintah tidak dikenal. Kirim <code>/imdbtemplate</code> untuk panduan.",
         parse_mode=enums.ParseMode.HTML,
+        del_in=8,
+    )
+
+
+@app.on_cmd("imdbby")
+async def imdb_by_cmd(_, message: Message):
+    if message.sender_chat:
+        return await message.reply_msg(
+            "Cannot identify user, please use in private chat.", del_in=7
+        )
+    if not message.from_user:
+        return
+    user_id = message.from_user.id
+    raw = message.text or message.caption or ""
+    parts = raw.split(None, 1)
+    value = parts[1].strip() if len(parts) > 1 else ""
+    if not value and message.reply_to_message:
+        value = (
+            (message.reply_to_message.text or message.reply_to_message.caption or "")
+        ).strip()
+    if not value:
+        current = await get_imdb_by(user_id)
+        current_text = (
+            f"<code>{html.escape(current)}</code>" if current else "Default bot username"
+        )
+        return await message.reply_msg(
+            (
+                "<b>Pengaturan IMDb By</b>\n"
+                f"Saat ini: {current_text}\n\n"
+                "Kirim <code>/imdbby @usernamekamu</code> atau balas pesan berisi teks "
+                "untuk mengganti label. Gunakan <code>/imdbby reset</code> untuk "
+                "kembali ke default."
+            ),
+            parse_mode=enums.ParseMode.HTML,
+            disable_web_page_preview=True,
+        )
+    if value.lower() in {"reset", "default", "clear"}:
+        await clear_imdb_by(user_id)
+        return await message.reply_msg(
+            "IMDb by dikembalikan ke default bot.", del_in=8
+        )
+    if len(value) > 64:
+        return await message.reply_msg(
+            "Teks terlalu panjang. Maksimal 64 karakter.", del_in=8
+        )
+    await set_imdb_by(user_id, value)
+    await message.reply_msg(
+        f'IMDb by diganti menjadi: <code>{html.escape(value)}</code>',
+        parse_mode=enums.ParseMode.HTML,
+        disable_web_page_preview=True,
         del_in=8,
     )
 
@@ -1364,8 +1473,9 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
             )
             layout = await get_imdb_layout(query.from_user.id)
             custom_template = await get_custom_imdb_template(query.from_user.id)
+            custom_imdb_by = await get_imdb_by(query.from_user.id)
             context = await _build_imdb_context(
-                self, sop, r_json, imdb_url, ott, "id", f"tt{movie}"
+                self, sop, r_json, imdb_url, ott, "id", f"tt{movie}", custom_imdb_by
             )
             caption = ""
             markup = None
@@ -1425,8 +1535,9 @@ async def imdb_en_callback(self: Client, query: CallbackQuery):
             )
             layout = await get_imdb_layout(query.from_user.id)
             custom_template = await get_custom_imdb_template(query.from_user.id)
+            custom_imdb_by = await get_imdb_by(query.from_user.id)
             context = await _build_imdb_context(
-                self, sop, r_json, imdb_url, ott, "en", f"tt{movie}"
+                self, sop, r_json, imdb_url, ott, "en", f"tt{movie}", custom_imdb_by
             )
             caption = ""
             markup = None

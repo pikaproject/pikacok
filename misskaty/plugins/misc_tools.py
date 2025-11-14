@@ -567,10 +567,11 @@ async def close_callback(_, query: CallbackQuery):
         with contextlib.suppress(QueryIdInvalid):
             return await query.answer("⚠️ Access Denied!", True)
     with contextlib.suppress(Exception):
-        await query.answer("Deleting this message in 5 seconds.")
-        await asyncio.sleep(5)
+        await query.answer("Menutup…")
         await query.message.delete_msg()
-        await query.message.reply_to_message.delete_msg()
+        if query.message.reply_to_message:
+            with contextlib.suppress(Exception):
+                await query.message.reply_to_message.delete_msg()
 
 
 async def mdlapi(title):
