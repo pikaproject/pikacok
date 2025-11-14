@@ -106,7 +106,7 @@ def _build_imdb_settings_caption(user_name: str) -> str:
 
 def _build_imdb_settings_keyboard(user_id: int) -> InlineKeyboard:
     buttons = InlineKeyboard(row_width=1)
-    buttons.row(InlineButton("🎛 Edit Layout", f"imdblayout#{user_id}"))
+    buttons.row(InlineButton("🎛 Edit Layout", f"imdbslayout#{user_id}"))
     buttons.row(InlineButton("🚩 Language", f"imdbset#{user_id}"))
     buttons.row(InlineButton("❌ Close", f"close#{user_id}"))
     return buttons
@@ -134,13 +134,14 @@ def _build_layout_caption(layout: dict) -> str:
 
 def _build_layout_keyboard(user_id: int, layout: dict) -> InlineKeyboard:
     buttons = InlineKeyboard(row_width=2)
+    layout_buttons = []
     for key, label in IMDB_LAYOUT_FIELDS:
         status = "✅" if layout.get(key, True) else "🚫"
-        buttons.add(
-            InlineButton(
-                f"{status} {label}", f"imdblayouttoggle#{key}#{user_id}"
-            )
+        layout_buttons.append(
+            InlineButton(f"{status} {label}", f"imdblayouttoggle#{key}#{user_id}")
         )
+    if layout_buttons:
+        buttons.add(*layout_buttons)
     buttons.row(
         InlineButton("🔁 Reset", f"imdblayoutreset#{user_id}"),
         InlineButton("⬅️ Back", f"imdbsettings#{user_id}"),
@@ -428,9 +429,11 @@ async def imdb_settings_callback(_, query: CallbackQuery):
         await query.message.edit_caption(caption, reply_markup=buttons)
 
 
-@app.on_cb("imdblayout")
+@app.on_cb("imdbslayout")
 async def imdb_layout_menu(_, query: CallbackQuery):
-    _, uid = query.data.split("#")
+    if not query.data.startswith("imdbslayout#"):
+        return
+    _, uid = query.data.split("#", 1)
     if query.from_user.id != int(uid):
         return await query.answer("Access Denied!", True)
     layout = await get_imdb_layout(query.from_user.id)
