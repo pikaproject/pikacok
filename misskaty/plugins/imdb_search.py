@@ -87,8 +87,8 @@ IMDB_LAYOUT_FIELDS = [
     ("button_trailer", "Trailer"),
 ]
 IMDB_LAYOUT_LABELS = dict(IMDB_LAYOUT_FIELDS)
-IMDB_BUTTON_OPEN_TEXT = "ðŸŽ¬ Open IMDB"
-IMDB_BUTTON_TRAILER_TEXT = "â–¶ï¸ Trailer"
+IMDB_BUTTON_OPEN_TEXT = "🎬 Open IMDB"
+IMDB_BUTTON_TRAILER_TEXT = "▶️ Trailer"
 IMDB_EMPTY_LAYOUT_NOTICE = {
     "id": (
         "⚠️ Semua bagian detail IMDb kamu sedang disembunyikan. "
@@ -717,7 +717,7 @@ async def _build_imdb_context(
 
 IMDB_FIELD_LABELS = {
     "id": {
-        "title": "🎬 Judul",
+        "title": "📹 Judul",
         "aka": "📢 AKA",
         "duration": "Durasi",
         "category": "Kategori",
@@ -737,7 +737,7 @@ IMDB_FIELD_LABELS = {
         "imdb_by": "©️ IMDb by",
     },
     "en": {
-        "title": "🎬 Title",
+        "title": "📹 Title",
         "aka": "📢 AKA",
         "duration": "Duration",
         "category": "Category",
