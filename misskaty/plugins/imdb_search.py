@@ -144,6 +144,10 @@ PLACEHOLDER_HELP_TEXT = "\n".join(
     f"• <code>{{{key}}}</code> - {desc}"
     for key, desc in CUSTOM_TEMPLATE_PLACEHOLDERS
 )
+PLACEHOLDER_HELP_TEXT += (
+    "\n• <code>{nama_placeholder_html}</code> - versi aman HTML "
+    "(otomatis tersedia untuk setiap placeholder teks)."
+)
 
 
 class _SafeTemplateDict(dict):
@@ -712,6 +716,9 @@ async def _build_imdb_context(
     trailer = metadata.get("trailer") or {}
     if trailer.get("url"):
         context["trailer_url"] = trailer["url"]
+    for key, value in list(context.items()):
+        if isinstance(value, str) and not key.endswith("_html"):
+            context[f"{key}_html"] = html.escape(value)
     return context
 
 
@@ -971,8 +978,9 @@ async def _send_template_instructions(message: Message, user_id: int) -> None:
         "• <code>/imdbtemplate show</code> untuk melihat template.\n"
         "• Tombol dapat dibuat dengan format <code>[Label](https://contoh.com)</code>.\n\n"
         "<b>Placeholder:</b>\n"
-        f"{PLACEHOLDER_HELP_TEXT}"
-        #f"{preview}"
+        f"{PLACEHOLDER_HELP_TEXT}\n"
+        "Contoh penggunaan: <code><blockquote>{plot_html}</blockquote></code>"
+        # f"{preview}"
     )
     await message.reply_msg(
         text,
