@@ -66,7 +66,7 @@ IMDB_HEADERS = {
     ),
     "Accept-Language": "en-US,en;q=0.9",
 }
-SOLVER_API_URL = environ.get("SOLVER_API_URL", "https://solver.pika.web.id/")
+SOLVER_API_URL = environ.get("SOLVER_API_URL", "https://pika-resolver.vercel.app/api")
 IMDB_SPLASH_IMAGE = "https://img.yasirweb.eu.org/file/270955ef0d1a8a16831a9.jpg"
 IMDB_LAYOUT_FIELDS = [
     ("title", "Judul"),
