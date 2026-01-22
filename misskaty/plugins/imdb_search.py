@@ -377,7 +377,7 @@ async def _fetch_imdb_html_via_solver(imdb_url: str) -> Optional[str]:
             "cmd": "request.get",
             "url": imdb_url,
             "maxTimeout": 60000,
-            "headers": IMDB_HEADERS,
+            #"headers": IMDB_HEADERS,
         }
         resp = await fetch.post(
             solver_url,
@@ -417,18 +417,19 @@ async def _fetch_imdb_html(
     headers = getattr(resp, "headers", {}) or {}
     waf_action = headers.get("x-amzn-waf-action") if headers else None
     text = getattr(resp, "text", "") or ""
-    if status_code >= 400:
-        resp.raise_for_status()
     used_fallback = False
-    if status_code == 202 or waf_action or not text.strip():
+    if status_code >= 400 or status_code == 202 or waf_action or not text.strip():
         LOGGER.warning(
             "IMDB returned status=%s waf=%s for %s; retrying via cloudscraper",
             status_code,
             waf_action,
             imdb_url,
         )
-        text = await _fetch_imdb_html_via_scraper(imdb_url)
-        used_fallback = True
+        try:
+            text = await _fetch_imdb_html_via_scraper(imdb_url)
+            used_fallback = True
+        except Exception as exc:
+            LOGGER.warning("Cloudscraper error for %s: %s", imdb_url, exc)
     return text, status_code, waf_action, used_fallback
 
 
