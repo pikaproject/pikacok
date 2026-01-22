@@ -66,7 +66,7 @@ IMDB_HEADERS = {
     ),
     "Accept-Language": "en-US,en;q=0.9",
 }
-SOLVER_API_URL = environ.get("SOLVER_API_URL", "https://pika-resolver.vercel.app/api")
+SOLVER_API_URL = environ.get("SOLVER_API_URL", "http://cf2.pika.web.id:8191/v1")
 IMDB_SPLASH_IMAGE = "https://img.yasirweb.eu.org/file/270955ef0d1a8a16831a9.jpg"
 IMDB_LAYOUT_FIELDS = [
     ("title", "Judul"),
@@ -371,15 +371,39 @@ async def _fetch_imdb_html_via_solver(imdb_url: str) -> Optional[str]:
         return None
     solver_url = solver_url.rstrip("/")
     try:
-        resp = await fetch.get(
-            solver_url, params={"url": imdb_url}, timeout=60, headers=IMDB_HEADERS
+        if not solver_url.endswith("/v1"):
+            solver_url = f"{solver_url}/v1"
+        payload = {
+            "cmd": "request.get",
+            "url": imdb_url,
+            "maxTimeout": 60000,
+            "headers": IMDB_HEADERS,
+        }
+        resp = await fetch.post(
+            solver_url,
+            json=payload,
+            timeout=60,
+            headers={"Content-Type": "application/json"},
         )
         resp.raise_for_status()
     except httpx.HTTPError as exc:
         LOGGER.warning("Solver API HTTP error for %s: %s", imdb_url, exc)
         return None
-    text = getattr(resp, "text", "")
-    if not text or not text.strip():
+    try:
+        data = resp.json()
+    except (ValueError, TypeError) as exc:
+        LOGGER.warning("Solver API JSON error for %s: %s", imdb_url, exc)
+        return None
+    if data.get("status") != "ok":
+        LOGGER.warning(
+            "Solver API returned status=%s for %s",
+            data.get("status"),
+            imdb_url,
+        )
+        return None
+    solution = data.get("solution") or {}
+    text = solution.get("response") or ""
+    if not text.strip():
         LOGGER.warning("Solver API returned empty body for %s", imdb_url)
         return None
     return text
