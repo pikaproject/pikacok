@@ -2,21 +2,17 @@
 # * @date          2023-06-21 22:12:27
 # * @projectName   MissKatyPyro
 # * Copyright ©YasirPedia All rights reserved
-import asyncio
 import contextlib
 import html
 import json
 import logging
 import re
 import sys
-from os import environ
 from typing import Optional
 from urllib.parse import quote_plus
 
 import httpx
-import cloudscraper
 from bs4 import BeautifulSoup
-import requests
 from pykeyboard import InlineButton, InlineKeyboard
 from pyrogram import Client, enums
 from pyrogram.errors import (
@@ -66,7 +62,6 @@ IMDB_HEADERS = {
     ),
     "Accept-Language": "en-US,en;q=0.9",
 }
-SOLVER_API_URL = environ.get("SOLVER_API_URL", "http://cf2.pika.web.id:8191/v1")
 IMDB_SPLASH_IMAGE = "https://img.yasirweb.eu.org/file/270955ef0d1a8a16831a9.jpg"
 IMDB_LAYOUT_FIELDS = [
     ("title", "Judul"),
@@ -345,92 +340,22 @@ async def imdb_by_reset(_, query: CallbackQuery):
     await _render_imdb_by_menu(query, query.from_user.id)
 
 
-def _scrape_imdb_html(imdb_url: str) -> str:
-    session = requests.Session()
-    session.headers.update(IMDB_HEADERS)
-    waf_hint = None
-    for _ in range(3):
-        resp = session.get(imdb_url, timeout=20)
-        waf_hint = resp.headers.get("x-amzn-waf-action")
-        if resp.status_code != 202 and waf_hint != "challenge" and resp.text.strip():
-            return resp.text
-    scraper = cloudscraper.create_scraper()
-    resp = scraper.get(imdb_url, timeout=30, headers=IMDB_HEADERS)
-    resp.raise_for_status()
-    return resp.text
-
-
-async def _fetch_imdb_html_via_scraper(imdb_url: str) -> str:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _scrape_imdb_html, imdb_url)
-
-
-async def _fetch_imdb_html_via_solver(imdb_url: str) -> Optional[str]:
-    solver_url = SOLVER_API_URL
-    if not solver_url:
-        return None
-    solver_url = solver_url.rstrip("/")
-    try:
-        if not solver_url.endswith("/v1"):
-            solver_url = f"{solver_url}/v1"
-        payload = {
-            "cmd": "request.get",
-            "url": imdb_url,
-            "maxTimeout": 60000,
-            #"headers": IMDB_HEADERS,
-        }
-        resp = await fetch.post(
-            solver_url,
-            json=payload,
-            timeout=60,
-            headers={"Content-Type": "application/json"},
-        )
-        resp.raise_for_status()
-    except httpx.HTTPError as exc:
-        LOGGER.warning("Solver API HTTP error for %s: %s", imdb_url, exc)
-        return None
-    try:
-        data = resp.json()
-    except (ValueError, TypeError) as exc:
-        LOGGER.warning("Solver API JSON error for %s: %s", imdb_url, exc)
-        return None
-    if data.get("status") != "ok":
-        LOGGER.warning(
-            "Solver API returned status=%s for %s",
-            data.get("status"),
-            imdb_url,
-        )
-        return None
-    solution = data.get("solution") or {}
-    text = solution.get("response") or ""
-    if not text.strip():
-        LOGGER.warning("Solver API returned empty body for %s", imdb_url)
-        return None
-    return text
-
-
 async def _fetch_imdb_html(
     imdb_url: str,
-) -> tuple[str, int, Optional[str], bool]:
+) -> tuple[str, int, Optional[str]]:
     resp = await fetch.get(imdb_url, headers=IMDB_HEADERS)
     status_code = getattr(resp, "status_code", 0)
     headers = getattr(resp, "headers", {}) or {}
     waf_action = headers.get("x-amzn-waf-action") if headers else None
     text = getattr(resp, "text", "") or ""
-    used_fallback = False
     if status_code >= 400 or status_code == 202 or waf_action or not text.strip():
         LOGGER.warning(
-            "IMDB returned status=%s waf=%s for %s; retrying via cloudscraper",
+            "IMDB returned status=%s waf=%s for %s",
             status_code,
             waf_action,
             imdb_url,
         )
-        try:
-            text = await _fetch_imdb_html_via_scraper(imdb_url)
-            used_fallback = True
-        except Exception as exc:
-            LOGGER.warning("Cloudscraper error for %s: %s", imdb_url, exc)
-    return text, status_code, waf_action, used_fallback
+    return text, status_code, waf_action
 
 
 def _parse_imdb_metadata(html: str) -> tuple[BeautifulSoup, Optional[dict]]:
@@ -451,30 +376,18 @@ def _parse_imdb_metadata(html: str) -> tuple[BeautifulSoup, Optional[dict]]:
 
 
 async def _get_imdb_page(imdb_url: str) -> tuple[BeautifulSoup, dict]:
-    html, status_code, waf_action, used_fallback = await _fetch_imdb_html(imdb_url)
+    html, status_code, waf_action = await _fetch_imdb_html(imdb_url)
     soup, metadata = _parse_imdb_metadata(html)
     if metadata:
         return soup, metadata
     LOGGER.warning(
-        "IMDB metadata missing on first parse (status=%s, waf=%s, fallback=%s) for %s",
+        "IMDB metadata missing on first parse (status=%s, waf=%s) for %s",
         status_code,
         waf_action,
-        used_fallback,
         imdb_url,
     )
-    solver_html = await _fetch_imdb_html_via_solver(imdb_url)
-    if solver_html:
-        soup, metadata = _parse_imdb_metadata(solver_html)
-        if metadata:
-            LOGGER.info("Fetched IMDB metadata via Solver API for %s", imdb_url)
-            return soup, metadata
-    if not used_fallback:
-        html = await _fetch_imdb_html_via_scraper(imdb_url)
-        soup, metadata = _parse_imdb_metadata(html)
-        if metadata:
-            return soup, metadata
     raise ValueError(
-        f"Tidak dapat mengambil metadata IMDB (status={status_code}, waf={waf_action}, solver={bool(solver_html)})."
+        f"Tidak dapat mengambil metadata IMDB (status={status_code}, waf={waf_action})."
     )
 
 
