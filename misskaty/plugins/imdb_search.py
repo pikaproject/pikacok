@@ -62,6 +62,7 @@ IMDB_HEADERS = {
     ),
     "Accept-Language": "en-US,en;q=0.9",
 }
+IMDB_WEB_BASE = "https://www.imdb.com"
 IMDB_SPLASH_IMAGE = "https://img.yasirweb.eu.org/file/270955ef0d1a8a16831a9.jpg"
 IMDB_LAYOUT_FIELDS = [
     ("title", "Judul"),
@@ -358,34 +359,208 @@ async def _fetch_imdb_html(
     return text, status_code, waf_action
 
 
+def _extract_next_data(soup: BeautifulSoup) -> Optional[dict]:
+    script_tag = soup.find("script", id="__NEXT_DATA__")
+    if not script_tag:
+        return None
+    raw = script_tag.string
+    if raw is None and script_tag.contents:
+        raw = script_tag.contents[0]
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        LOGGER.exception("Failed to decode IMDB __NEXT_DATA__ JSON.")
+    return None
+
+
+def _next_data_credit_to_person(credit: dict) -> Optional[dict]:
+    name_info = credit.get("name") or {}
+    name_text = (name_info.get("nameText") or {}).get("text")
+    if not name_text:
+        return None
+    imdb_id = name_info.get("id")
+    person = {"name": name_text}
+    if imdb_id:
+        person["url"] = f"{IMDB_WEB_BASE}/name/{imdb_id}/"
+    return person
+
+
+def _next_data_credit_edges_to_people(edges: list[dict]) -> list[dict]:
+    people = []
+    for edge in edges or []:
+        node = edge.get("node") or edge
+        if person := _next_data_credit_to_person(node):
+            people.append(person)
+    deduped = []
+    seen = set()
+    for person in people:
+        key = (person.get("url") or person["name"]).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(person)
+    return deduped
+
+
+def _build_metadata_from_next_data(next_data: dict) -> Optional[dict]:
+    page_props = (next_data.get("props") or {}).get("pageProps") or {}
+    main_column = page_props.get("mainColumnData") or page_props.get("aboveTheFoldData") or {}
+    if not main_column:
+        return None
+
+    metadata = {}
+    title_text = ((main_column.get("titleText") or {}).get("text") or "").strip()
+    if title_text:
+        metadata["name"] = title_text
+
+    original_title = ((main_column.get("originalTitleText") or {}).get("text") or "").strip()
+    if original_title and original_title != title_text:
+        metadata["alternateName"] = original_title
+
+    title_type = ((main_column.get("titleType") or {}).get("text") or "").strip()
+    if title_type:
+        metadata["@type"] = title_type
+
+    certificate = (main_column.get("certificate") or {}).get("rating")
+    if certificate:
+        metadata["contentRating"] = certificate
+
+    ratings = main_column.get("ratingsSummary") or {}
+    rating_value = ratings.get("aggregateRating")
+    rating_count = ratings.get("voteCount")
+    if rating_value is not None or rating_count is not None:
+        metadata["aggregateRating"] = {}
+        if rating_value is not None:
+            metadata["aggregateRating"]["ratingValue"] = rating_value
+        if rating_count is not None:
+            metadata["aggregateRating"]["ratingCount"] = rating_count
+
+    genres = []
+    for item in ((main_column.get("titleGenres") or {}).get("genres") or []):
+        genre_text = ((item.get("genre") or {}).get("text") or "").strip()
+        if genre_text:
+            genres.append(genre_text)
+    if genres:
+        metadata["genre"] = genres
+
+    plot_text = (((main_column.get("plot") or {}).get("plotText") or {}).get("plainText") or "").strip()
+    if plot_text:
+        metadata["description"] = plot_text
+
+    image_url = (main_column.get("primaryImage") or {}).get("url")
+    if image_url:
+        metadata["image"] = image_url
+
+    keyword_texts = []
+    for edge in ((main_column.get("storylineKeywords") or {}).get("edges") or []):
+        keyword_text = ((edge.get("node") or {}).get("text") or "").strip()
+        if keyword_text:
+            keyword_texts.append(keyword_text)
+    if keyword_texts:
+        metadata["keywords"] = ",".join(keyword_texts)
+
+    for edge in ((main_column.get("creditGroupings") or {}).get("edges") or []):
+        node = edge.get("node") or {}
+        grouping = ((node.get("grouping") or {}).get("text") or "").lower()
+        people = _next_data_credit_edges_to_people((node.get("credits") or {}).get("edges") or [])
+        if not people:
+            continue
+        if "director" in grouping:
+            metadata["director"] = people
+        elif "writer" in grouping:
+            metadata["creator"] = people
+
+    if "director" not in metadata or "creator" not in metadata:
+        for section in main_column.get("crewV2") or []:
+            grouping = ((section.get("grouping") or {}).get("text") or "").lower()
+            people = _next_data_credit_edges_to_people(section.get("credits") or [])
+            if not people:
+                continue
+            if "director" in grouping and "director" not in metadata:
+                metadata["director"] = people
+            elif "writer" in grouping and "creator" not in metadata:
+                metadata["creator"] = people
+
+    cast_people = []
+    for section in main_column.get("principalCreditsV2") or []:
+        grouping = ((section.get("grouping") or {}).get("text") or "").lower()
+        if "star" not in grouping and "cast" not in grouping:
+            continue
+        cast_people.extend(_next_data_credit_edges_to_people(section.get("credits") or []))
+    if not cast_people:
+        for section in main_column.get("castV2") or []:
+            cast_people.extend(_next_data_credit_edges_to_people(section.get("credits") or []))
+            if cast_people:
+                break
+    if cast_people:
+        metadata["actor"] = cast_people
+
+    for edge in ((main_column.get("primaryVideos") or {}).get("edges") or []):
+        node = edge.get("node") or {}
+        display_name = (((node.get("contentType") or {}).get("displayName") or {}).get("value") or "").lower()
+        if "trailer" not in display_name:
+            continue
+        if video_id := node.get("id"):
+            metadata["trailer"] = {"url": f"{IMDB_WEB_BASE}/video/{video_id}/"}
+            break
+
+    return metadata or None
+
+
 def _parse_imdb_metadata(html: str) -> tuple[BeautifulSoup, Optional[dict]]:
     soup = BeautifulSoup(html, "lxml")
     script_tag = soup.find("script", attrs={"type": "application/ld+json"})
     if not script_tag:
+        next_data = _extract_next_data(soup)
+        if next_data:
+            return soup, _build_metadata_from_next_data(next_data)
         return soup, None
     raw = script_tag.string
     if raw is None and script_tag.contents:
         raw = script_tag.contents[0]
     if not raw:
+        next_data = _extract_next_data(soup)
+        if next_data:
+            return soup, _build_metadata_from_next_data(next_data)
         return soup, None
     try:
         return soup, json.loads(raw)
     except json.JSONDecodeError:
         LOGGER.exception("Failed to decode IMDB metadata JSON.")
+    next_data = _extract_next_data(soup)
+    if next_data:
+        return soup, _build_metadata_from_next_data(next_data)
     return soup, None
 
 
+def _build_imdb_reference_url(imdb_url: str) -> Optional[str]:
+    match = re.search(r"(tt\d+)", imdb_url or "")
+    if not match:
+        return None
+    return f"{IMDB_WEB_BASE}/title/{match.group(1)}/reference/"
+
+
 async def _get_imdb_page(imdb_url: str) -> tuple[BeautifulSoup, dict]:
-    html, status_code, waf_action = await _fetch_imdb_html(imdb_url)
-    soup, metadata = _parse_imdb_metadata(html)
-    if metadata:
-        return soup, metadata
-    LOGGER.warning(
-        "IMDB metadata missing on first parse (status=%s, waf=%s) for %s",
-        status_code,
-        waf_action,
-        imdb_url,
-    )
+    attempts = [imdb_url]
+    if reference_url := _build_imdb_reference_url(imdb_url):
+        if reference_url not in attempts:
+            attempts.append(reference_url)
+
+    status_code = 0
+    waf_action = None
+    for attempt_url in attempts:
+        html, status_code, waf_action = await _fetch_imdb_html(attempt_url)
+        soup, metadata = _parse_imdb_metadata(html)
+        if metadata:
+            return soup, metadata
+        LOGGER.warning(
+            "IMDB metadata missing (status=%s, waf=%s) for %s",
+            status_code,
+            waf_action,
+            attempt_url,
+        )
     raise ValueError(
         f"Tidak dapat mengambil metadata IMDB (status={status_code}, waf={waf_action})."
     )
@@ -442,7 +617,7 @@ def _extract_people_from_imdb(soup: BeautifulSoup, metadata: dict) -> dict:
                 name_info = credit.get("name") or {}
                 name_text = (name_info.get("nameText") or {}).get("text")
                 imdb_id = name_info.get("id")
-                url = f"https://m.imdb.com/name/{imdb_id}/" if imdb_id else None
+                url = f"{IMDB_WEB_BASE}/name/{imdb_id}/" if imdb_id else None
                 if "director" in grouping:
                     add_person("directors", name_text, url)
                 elif "writer" in grouping:
@@ -452,7 +627,7 @@ def _extract_people_from_imdb(soup: BeautifulSoup, metadata: dict) -> dict:
                 name_info = credit.get("name") or {}
                 name_text = (name_info.get("nameText") or {}).get("text")
                 imdb_id = name_info.get("id")
-                url = f"https://m.imdb.com/name/{imdb_id}/" if imdb_id else None
+                url = f"{IMDB_WEB_BASE}/name/{imdb_id}/" if imdb_id else None
                 add_person("cast", name_text, url)
             if people["cast"]:
                 break
@@ -565,7 +740,7 @@ async def _build_imdb_context(
         if release_node:
             release_text = release_node.text.strip()
             release_href = release_node.get("href", "")
-            release_url = f"https://m.imdb.com{release_href}"
+            release_url = f"{IMDB_WEB_BASE}{release_href}"
             context["release"] = release_text
             context["release_url"] = release_url
             context["release_link"] = f"<a href='{release_url}'>{html.escape(release_text)}</a>"
@@ -1412,7 +1587,7 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
     with contextlib.redirect_stdout(sys.stderr):
         try:
             await query.message.edit_caption("<i>⏳ Permintaan kamu sedang diproses.. </i>")
-            imdb_url = f"https://m.imdb.com/title/tt{movie}/"
+            imdb_url = f"{IMDB_WEB_BASE}/title/tt{movie}/"
             sop, r_json = await _get_imdb_page(imdb_url)
             ott = await search_jw(
                 r_json.get("alternateName") or r_json.get("name"), "ID"
@@ -1474,7 +1649,7 @@ async def imdb_en_callback(self: Client, query: CallbackQuery):
     with contextlib.redirect_stdout(sys.stderr):
         try:
             await query.message.edit_caption("<i>⏳ Getting IMDb source..</i>")
-            imdb_url = f"https://m.imdb.com/title/tt{movie}/"
+            imdb_url = f"{IMDB_WEB_BASE}/title/tt{movie}/"
             sop, r_json = await _get_imdb_page(imdb_url)
             ott = await search_jw(
                 r_json.get("alternateName") or r_json.get("name"), "US"
