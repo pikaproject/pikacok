@@ -442,7 +442,7 @@ def _extract_people_from_imdb(soup: BeautifulSoup, metadata: dict) -> dict:
                 name_info = credit.get("name") or {}
                 name_text = (name_info.get("nameText") or {}).get("text")
                 imdb_id = name_info.get("id")
-                url = f"https://www.imdb.com/name/{imdb_id}/" if imdb_id else None
+                url = f"https://m.imdb.com/name/{imdb_id}/" if imdb_id else None
                 if "director" in grouping:
                     add_person("directors", name_text, url)
                 elif "writer" in grouping:
@@ -452,7 +452,7 @@ def _extract_people_from_imdb(soup: BeautifulSoup, metadata: dict) -> dict:
                 name_info = credit.get("name") or {}
                 name_text = (name_info.get("nameText") or {}).get("text")
                 imdb_id = name_info.get("id")
-                url = f"https://www.imdb.com/name/{imdb_id}/" if imdb_id else None
+                url = f"https://m.imdb.com/name/{imdb_id}/" if imdb_id else None
                 add_person("cast", name_text, url)
             if people["cast"]:
                 break
@@ -565,7 +565,7 @@ async def _build_imdb_context(
         if release_node:
             release_text = release_node.text.strip()
             release_href = release_node.get("href", "")
-            release_url = f"https://www.imdb.com{release_href}"
+            release_url = f"https://m.imdb.com{release_href}"
             context["release"] = release_text
             context["release_url"] = release_url
             context["release_link"] = f"<a href='{release_url}'>{html.escape(release_text)}</a>"
@@ -1412,7 +1412,7 @@ async def imdb_id_callback(self: Client, query: CallbackQuery):
     with contextlib.redirect_stdout(sys.stderr):
         try:
             await query.message.edit_caption("<i>⏳ Permintaan kamu sedang diproses.. </i>")
-            imdb_url = f"https://www.imdb.com/title/tt{movie}/"
+            imdb_url = f"https://m.imdb.com/title/tt{movie}/"
             sop, r_json = await _get_imdb_page(imdb_url)
             ott = await search_jw(
                 r_json.get("alternateName") or r_json.get("name"), "ID"
@@ -1474,7 +1474,7 @@ async def imdb_en_callback(self: Client, query: CallbackQuery):
     with contextlib.redirect_stdout(sys.stderr):
         try:
             await query.message.edit_caption("<i>⏳ Getting IMDb source..</i>")
-            imdb_url = f"https://www.imdb.com/title/tt{movie}/"
+            imdb_url = f"https://m.imdb.com/title/tt{movie}/"
             sop, r_json = await _get_imdb_page(imdb_url)
             ott = await search_jw(
                 r_json.get("alternateName") or r_json.get("name"), "US"
