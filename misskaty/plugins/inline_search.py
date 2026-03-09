@@ -27,7 +27,7 @@ from pyrogram.types import (
 from misskaty import BOT_USERNAME, app, user
 from misskaty.helper import GENRES_EMOJI, fetch, gtranslate, post_to_telegraph, search_jw
 from misskaty.plugins.dev import shell_exec
-from misskaty.plugins.imdb_search import _get_imdb_page
+from misskaty.plugins.imdb_search import _format_imdb_runtime, _get_imdb_page
 from misskaty.plugins.misc_tools import calc_btn
 from misskaty.vars import USER_SESSION
 from utils import demoji
@@ -656,9 +656,12 @@ async def imdb_inl(_, query):
                 durasi = (
                     durasi[0]
                     .find(class_="ipc-metadata-list-item__content-container")
-                    .text
+                    .get_text(" ", strip=True)
                 )
-                res_str += f"<b>Durasi:</b> <code>{(await gtranslate(durasi, 'auto', 'id')).text}</code>\n"
+                res_str += (
+                    f"<b>Durasi:</b> "
+                    f"<code>{_format_imdb_runtime(durasi, 'id')}</code>\n"
+                )
             if r_json.get("contentRating"):
                 res_str += f"<b>Kategori:</b> <code>{r_json['contentRating']}</code> \n"
             if r_json.get("aggregateRating"):

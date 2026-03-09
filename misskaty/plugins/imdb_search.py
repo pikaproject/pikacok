@@ -585,6 +585,39 @@ def _format_people_list(people_list, limit=None):
     return ", ".join(formatted)
 
 
+def _format_imdb_runtime(runtime_text: str, locale: str = "en") -> str:
+    runtime_text = re.sub(r"\s+", " ", (runtime_text or "").strip())
+    if not runtime_text:
+        return ""
+
+    hours_match = re.search(r"(\d+)\s*h", runtime_text, re.IGNORECASE)
+    minutes_match = re.search(r"(\d+)\s*m", runtime_text, re.IGNORECASE)
+    total_minutes_match = re.search(r"\((\d+)\s*min\)", runtime_text, re.IGNORECASE)
+
+    if locale == "id":
+        parts = []
+        if hours_match:
+            parts.append(f"{hours_match.group(1)} jam")
+        if minutes_match:
+            parts.append(f"{minutes_match.group(1)} menit")
+        if parts:
+            return " ".join(parts)
+        if total_minutes_match:
+            return f"{total_minutes_match.group(1)} menit"
+        return runtime_text.replace("min", "menit")
+
+    parts = []
+    if hours_match:
+        parts.append(f"{hours_match.group(1)}h")
+    if minutes_match:
+        parts.append(f"{minutes_match.group(1)}m")
+    if parts:
+        return " ".join(parts)
+    if total_minutes_match:
+        return f"{total_minutes_match.group(1)} min"
+    return runtime_text
+
+
 def _extract_people_from_imdb(soup: BeautifulSoup, metadata: dict) -> dict:
     people = {"directors": [], "writers": [], "cast": []}
     seen = {key: set() for key in people}
@@ -706,13 +739,9 @@ async def _build_imdb_context(
             class_="ipc-metadata-list-item__content-container"
         )
         if runtime_container:
-            runtime_text = runtime_container.text.strip()
+            runtime_text = runtime_container.get_text(" ", strip=True)
             context["duration_raw"] = runtime_text
-            if locale == "id":
-                translated = (await gtranslate(runtime_text, "auto", "id")).text
-                context["duration"] = translated
-            else:
-                context["duration"] = runtime_text
+            context["duration"] = _format_imdb_runtime(runtime_text, locale)
     category = metadata.get("contentRating")
     if category:
         context["category"] = category
