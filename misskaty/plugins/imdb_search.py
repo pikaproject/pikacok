@@ -50,6 +50,7 @@ from database.imdb_db import (
 )
 from misskaty import app
 from misskaty.helper import GENRES_EMOJI, Cache, fetch, gtranslate, get_random_string, search_jw
+from misskaty.helper.imdb_graphql import format_imdb_date, get_imdb_details_graphql
 from utils import demoji
 
 LOGGER = logging.getLogger("MissKaty")
@@ -563,7 +564,36 @@ def _build_imdb_reference_url(imdb_url: str) -> Optional[str]:
     return f"{IMDB_WEB_BASE}/title/{match.group(1)}/reference/"
 
 
+def _extract_imdb_code(imdb_url: str) -> Optional[str]:
+    match = re.search(r"(tt\d+)", imdb_url or "")
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _build_imdb_fallback_soup(title: str, year: Optional[str] = None) -> BeautifulSoup:
+    title = (title or "IMDb").strip()
+    year = str(year).strip() if year else ""
+    title_text = f"{title} ({year}) - IMDb" if year else f"{title} - IMDb"
+    return BeautifulSoup(
+        f"<html><head><title>{html.escape(title_text)}</title></head><body></body></html>",
+        "lxml",
+    )
+
+
 async def _get_imdb_page(imdb_url: str) -> tuple[BeautifulSoup, dict]:
+    if imdb_code := _extract_imdb_code(imdb_url):
+        graphql_metadata = await get_imdb_details_graphql(imdb_code)
+        if graphql_metadata:
+            LOGGER.info("Fetched IMDB metadata via GraphQL for %s", imdb_url)
+            return (
+                _build_imdb_fallback_soup(
+                    graphql_metadata.get("name") or "IMDb",
+                    graphql_metadata.get("releaseYear"),
+                ),
+                graphql_metadata,
+            )
+
     attempts = [imdb_url]
     if reference_url := _build_imdb_reference_url(imdb_url):
         if reference_url not in attempts:
@@ -736,7 +766,12 @@ async def _build_imdb_context(
     title = metadata.get("name") or "N/A"
     title_text = soup.title.text if soup and soup.title else ""
     year_match = re.findall(r"\d{4}\W\d{4}|\d{4}-?", title_text)
-    year = year_match[0] if year_match else "N/A"
+    metadata_year = (
+        metadata.get("releaseYear")
+        or metadata.get("year")
+        or (str(metadata.get("datePublished") or "").split("-", 1)[0] or "")
+    )
+    year = year_match[0] if year_match else str(metadata_year or "N/A")
     title_with_year = f"{title} [{year}]"
     context["title"] = title
     context["title_with_year"] = title_with_year
@@ -768,6 +803,9 @@ async def _build_imdb_context(
             runtime_text = runtime_container.get_text(" ", strip=True)
             context["duration_raw"] = runtime_text
             context["duration"] = _format_imdb_runtime(runtime_text, locale)
+    elif metadata.get("duration"):
+        context["duration_raw"] = metadata["duration"]
+        context["duration"] = _format_imdb_runtime(metadata["duration"], locale)
     category = metadata.get("contentRating")
     if category:
         context["category"] = category
@@ -799,6 +837,16 @@ async def _build_imdb_context(
             context["release"] = release_text
             context["release_url"] = release_url
             context["release_link"] = f"<a href='{release_url}'>{html.escape(release_text)}</a>"
+    elif metadata.get("datePublished"):
+        release_text = format_imdb_date(metadata.get("datePublished"), locale) or str(
+            metadata.get("datePublished")
+        )
+        release_url = f"{imdb_url}releaseinfo/"
+        context["release"] = release_text
+        context["release_url"] = release_url
+        context["release_link"] = (
+            f"<a href='{release_url}'>{html.escape(release_text)}</a>"
+        )
     genres = metadata.get("genre") or []
     if isinstance(genres, str):
         genres = [genres]
@@ -829,6 +877,14 @@ async def _build_imdb_context(
             context["countries"] = ", ".join(country_tags)
         if country_names:
             context["countries_list"] = ", ".join(country_names)
+    elif metadata.get("countryOfOrigin"):
+        country_names = [name.strip() for name in metadata["countryOfOrigin"] if name]
+        if country_names:
+            context["countries"] = ", ".join(
+                f"{demoji(name)} #{name.replace(' ', '_').replace('-', '_')}"
+                for name in country_names
+            )
+            context["countries_list"] = ", ".join(country_names)
     language_section = soup.select('li[data-testid="title-details-languages"]') if soup else []
     if language_section:
         lang_tags = []
@@ -844,6 +900,13 @@ async def _build_imdb_context(
         if lang_tags:
             context["languages"] = ", ".join(lang_tags)
         if lang_names:
+            context["languages_list"] = ", ".join(lang_names)
+    elif metadata.get("inLanguage"):
+        lang_names = [name.strip() for name in metadata["inLanguage"] if name]
+        if lang_names:
+            context["languages"] = ", ".join(
+                f"#{name.replace(' ', '_').replace('-', '_')}" for name in lang_names
+            )
             context["languages_list"] = ", ".join(lang_names)
     people = _extract_people_from_imdb(soup, metadata)
     if people["directors"]:

@@ -1,0 +1,216 @@
+import logging
+from datetime import date
+from typing import Optional
+
+from .http import fetch
+
+LOGGER = logging.getLogger("MissKaty")
+
+IMDB_GRAPHQL_URL = "https://caching.graphql.imdb.com/"
+IMDB_GRAPHQL_HEADERS = {
+    "accept": "application/graphql+json, application/json",
+    "accept-language": "en-US,en;q=0.9",
+    "content-type": "application/json",
+    "origin": "https://www.imdb.com",
+    "referer": "https://www.imdb.com/",
+    "priority": "u=1, i",
+    "user-agent": (
+        "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/137.0.0.0 Mobile Safari/537.36"
+    ),
+}
+IMDB_TITLE_QUERY = """query GetTitle($id: ID!) {
+  title(id: $id) {
+    id
+    titleText { text }
+    originalTitleText { text }
+    titleType { text }
+    releaseYear { year }
+    releaseDate { day month year }
+    runtime { seconds }
+    ratingsSummary { aggregateRating voteCount }
+    spokenLanguages { spokenLanguages { text } }
+    countriesOfOrigin { countries { text } }
+    certificate { rating }
+    genres { genres { text } }
+    plot { plotText { plainText } }
+    primaryImage { url }
+    principalCredits {
+      category { text }
+      credits { name { id nameText { text } } }
+    }
+    keywords(first: 20) { edges { node { text } } }
+    latestTrailer { playbackURLs { url } }
+  }
+}"""
+
+_MONTHS_ID = [
+    "Januari",
+    "Februari",
+    "Maret",
+    "April",
+    "Mei",
+    "Juni",
+    "Juli",
+    "Agustus",
+    "September",
+    "Oktober",
+    "November",
+    "Desember",
+]
+_MONTHS_EN = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+]
+
+
+def format_imdb_date(raw_date: Optional[str], locale: str = "id") -> Optional[str]:
+    if not raw_date:
+        return None
+    try:
+        year, month, day = [int(part) for part in str(raw_date).split("-")]
+        parsed = date(year, month, day)
+    except Exception:
+        return raw_date
+    if locale == "id":
+        return f"{parsed.day} {_MONTHS_ID[parsed.month - 1]} {parsed.year}"
+    return f"{parsed.day} {_MONTHS_EN[parsed.month - 1]} {parsed.year}"
+
+
+async def get_imdb_details_graphql(title_id: str) -> dict:
+    title_id = title_id if str(title_id).startswith("tt") else f"tt{title_id}"
+    try:
+        response = await fetch.post(
+            IMDB_GRAPHQL_URL,
+            headers=IMDB_GRAPHQL_HEADERS,
+            json={
+                "query": IMDB_TITLE_QUERY,
+                "operationName": "GetTitle",
+                "variables": {"id": title_id},
+            },
+        )
+        response.raise_for_status()
+        body = response.json()
+    except Exception as err:
+        LOGGER.warning("IMDb GraphQL request failed for %s: %s", title_id, err)
+        return {}
+
+    payload = (body.get("data") or {}).get("title") or {}
+    if not payload:
+        if body.get("errors"):
+            LOGGER.warning(
+                "IMDb GraphQL returned errors for %s: %s",
+                title_id,
+                body.get("errors"),
+            )
+        return {}
+
+    principal_credits = payload.get("principalCredits") or []
+
+    def _people(*categories):
+        result = []
+        for group in principal_credits:
+            category = ((group.get("category") or {}).get("text") or "").strip()
+            if category not in categories:
+                continue
+            for credit in group.get("credits") or []:
+                name_data = credit.get("name") or {}
+                name_text = (name_data.get("nameText") or {}).get("text")
+                person_id = name_data.get("id")
+                if not name_text:
+                    continue
+                result.append(
+                    {
+                        "@type": "Person",
+                        "name": name_text,
+                        "url": (
+                            f"https://www.imdb.com/name/{person_id}/"
+                            if person_id
+                            else ""
+                        ),
+                    }
+                )
+        return result
+
+    release_date = payload.get("releaseDate") or {}
+    raw_date = None
+    if release_date.get("year"):
+        raw_date = (
+            f"{release_date.get('year')}-"
+            f"{release_date.get('month') or 1}-"
+            f"{release_date.get('day') or 1}"
+        )
+
+    runtime_seconds = (payload.get("runtime") or {}).get("seconds")
+    duration_text = None
+    if isinstance(runtime_seconds, int) and runtime_seconds > 0:
+        duration_text = f"{runtime_seconds // 60} min"
+
+    alternate_name = (payload.get("originalTitleText") or {}).get("text")
+    name = (payload.get("titleText") or {}).get("text")
+    if alternate_name == name:
+        alternate_name = None
+
+    trailer_urls = (payload.get("latestTrailer") or {}).get("playbackURLs") or []
+    trailer_url = ""
+    for item in trailer_urls:
+        trailer_url = (item or {}).get("url") or ""
+        if trailer_url:
+            break
+
+    return {
+        "name": name,
+        "alternateName": alternate_name,
+        "@type": (payload.get("titleType") or {}).get("text"),
+        "releaseYear": (payload.get("releaseYear") or {}).get("year"),
+        "datePublished": raw_date,
+        "duration": duration_text,
+        "inLanguage": [
+            (item or {}).get("text")
+            for item in (payload.get("spokenLanguages") or {}).get(
+                "spokenLanguages", []
+            )
+            if (item or {}).get("text")
+        ],
+        "countryOfOrigin": [
+            (item or {}).get("text")
+            for item in (payload.get("countriesOfOrigin") or {}).get("countries", [])
+            if (item or {}).get("text")
+        ],
+        "contentRating": (payload.get("certificate") or {}).get("rating"),
+        "aggregateRating": {
+            "ratingValue": (payload.get("ratingsSummary") or {}).get(
+                "aggregateRating"
+            ),
+            "ratingCount": (payload.get("ratingsSummary") or {}).get("voteCount"),
+        },
+        "genre": [
+            (item or {}).get("text")
+            for item in (payload.get("genres") or {}).get("genres", [])
+            if (item or {}).get("text")
+        ],
+        "description": ((payload.get("plot") or {}).get("plotText") or {}).get(
+            "plainText"
+        ),
+        "image": (payload.get("primaryImage") or {}).get("url"),
+        "trailer": {"url": trailer_url} if trailer_url else None,
+        "keywords": ", ".join(
+            (edge.get("node") or {}).get("text")
+            for edge in (payload.get("keywords") or {}).get("edges", [])
+            if (edge.get("node") or {}).get("text")
+        ),
+        "director": _people("Director", "Directors"),
+        "creator": _people("Writers", "Writer", "Creator"),
+        "actor": _people("Stars", "Cast"),
+    }

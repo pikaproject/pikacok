@@ -2,6 +2,7 @@ from .ffmpeg_helper import *
 from .files import *
 from .functions import *
 from .http import *
+from .imdb_graphql import *
 from .human_read import *
 from .kuso_utils import *
 from .localization import *
