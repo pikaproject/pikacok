@@ -344,7 +344,8 @@ async def imdb_by_reset(_, query: CallbackQuery):
 
 async def _fetch_imdb_html(
     imdb_url: str,
-) -> tuple[str, int, Optional[str]]:
+) -> tuple[str, int, Optional[str], str]:
+    request_source = "proxy"
     try:
         async with httpx.AsyncClient(
             proxy=IMDB_PROXY,
@@ -362,6 +363,7 @@ async def _fetch_imdb_html(
             IMDB_PROXY,
             exc,
         )
+        request_source = "direct"
         resp = await fetch.get(imdb_url, headers=IMDB_HEADERS)
     status_code = getattr(resp, "status_code", 0)
     headers = getattr(resp, "headers", {}) or {}
@@ -369,12 +371,13 @@ async def _fetch_imdb_html(
     text = getattr(resp, "text", "") or ""
     if status_code >= 400 or status_code == 202 or waf_action or not text.strip():
         LOGGER.warning(
-            "IMDB returned status=%s waf=%s for %s",
+            "IMDB returned status=%s waf=%s source=%s for %s",
             status_code,
             waf_action,
+            request_source,
             imdb_url,
         )
-    return text, status_code, waf_action
+    return text, status_code, waf_action, request_source
 
 
 def _extract_next_data(soup: BeautifulSoup) -> Optional[dict]:
@@ -568,19 +571,24 @@ async def _get_imdb_page(imdb_url: str) -> tuple[BeautifulSoup, dict]:
 
     status_code = 0
     waf_action = None
+    request_source = "unknown"
     for attempt_url in attempts:
-        html, status_code, waf_action = await _fetch_imdb_html(attempt_url)
+        html, status_code, waf_action, request_source = await _fetch_imdb_html(
+            attempt_url
+        )
         soup, metadata = _parse_imdb_metadata(html)
         if metadata:
             return soup, metadata
         LOGGER.warning(
-            "IMDB metadata missing (status=%s, waf=%s) for %s",
+            "IMDB metadata missing (status=%s, waf=%s, source=%s) for %s",
             status_code,
             waf_action,
+            request_source,
             attempt_url,
         )
     raise ValueError(
-        f"Tidak dapat mengambil metadata IMDB (status={status_code}, waf={waf_action})."
+        "Tidak dapat mengambil metadata IMDB "
+        f"(status={status_code}, waf={waf_action}, source={request_source})."
     )
 
 
