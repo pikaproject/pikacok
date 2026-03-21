@@ -62,6 +62,7 @@ IMDB_HEADERS = {
     ),
     "Accept-Language": "en-US,en;q=0.9",
 }
+IMDB_PROXY = "http://202.150.91.124:2301"
 IMDB_WEB_BASE = "https://www.imdb.com"
 IMDB_SPLASH_IMAGE = "https://img.yasirweb.eu.org/file/270955ef0d1a8a16831a9.jpg"
 IMDB_LAYOUT_FIELDS = [
@@ -344,7 +345,24 @@ async def imdb_by_reset(_, query: CallbackQuery):
 async def _fetch_imdb_html(
     imdb_url: str,
 ) -> tuple[str, int, Optional[str]]:
-    resp = await fetch.get(imdb_url, headers=IMDB_HEADERS)
+    try:
+        async with httpx.AsyncClient(
+            proxy=IMDB_PROXY,
+            verify=False,
+            headers=IMDB_HEADERS,
+            timeout=httpx.Timeout(20),
+            follow_redirects=True,
+            trust_env=False,
+        ) as imdb_client:
+            resp = await imdb_client.get(imdb_url)
+    except httpx.HTTPError as exc:
+        LOGGER.warning(
+            "IMDB proxy request failed for %s via %s: %s",
+            imdb_url,
+            IMDB_PROXY,
+            exc,
+        )
+        resp = await fetch.get(imdb_url, headers=IMDB_HEADERS)
     status_code = getattr(resp, "status_code", 0)
     headers = getattr(resp, "headers", {}) or {}
     waf_action = headers.get("x-amzn-waf-action") if headers else None
