@@ -54,7 +54,7 @@ web = {
     "savefilm21": "https://new11.savefilm21info.com",
     "melongmovie": "https://tv11.melongmovies.com",
     "terbit21": "https://terbit21official.site",
-    "lk21": "https://tv6.lk21official.cc",
+    "lk21": "https://tv10.lk21official.cc",
     "gomov": "https://klikxxi.com",
     "movieku": "https://movieku.ink",
     "kusonime": "https://kusonime.com",
