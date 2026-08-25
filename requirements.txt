@@ -23,7 +23,7 @@ Pillow==10.4.0
 httpx[http2]
 git+https://github.com/yasirarism/vcsi
 git+https://github.com/yasirarism/iytdl
-deep-translator
+googletrans
 telethon
 pyrate_limiter
 cachetools

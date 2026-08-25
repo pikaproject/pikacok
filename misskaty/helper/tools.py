@@ -4,6 +4,7 @@ import random
 import re
 import string
 import time
+from html import unescape
 from http.cookies import SimpleCookie
 from re import match as re_match
 from types import SimpleNamespace
@@ -13,7 +14,7 @@ from urllib.parse import urlparse
 import cv2
 import numpy as np
 import psutil
-from deep_translator import GoogleTranslator
+from googletrans import Translator
 
 from misskaty import BOT_NAME, UBOT_NAME, botStartTime
 from misskaty.core.decorator import asyncify
@@ -49,10 +50,31 @@ GENRES_EMOJI = {
 }
 
 
-@asyncify
-def gtranslate(text, source="auto", target="id"):
-    translated = GoogleTranslator(source=source, target=target).translate(text)
-    return SimpleNamespace(text=translated, src=source, dest=target)
+async def gtranslate(text, source="auto", target="id"):
+    try:
+        async with Translator(raise_exception=True) as translator:
+            result = await translator.translate(text, src=source, dest=target)
+        if result.text.strip() != str(text).strip() or source == target:
+            return result
+    except Exception as error:
+        LOGGER.warning("Google Translate failed: %s", error)
+    source_lang = "autodetect" if source == "auto" else source
+    response = await fetch.get(
+        "https://api.mymemory.translated.net/get",
+        params={"q": text, "langpair": f"{source_lang}|{target}"},
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if payload.get("responseStatus") != 200:
+        raise ValueError(payload.get("responseDetails") or "Translation failed")
+    translated = unescape(
+        ((payload.get("responseData") or {}).get("translatedText") or "").strip()
+    )
+    if not translated:
+        raise ValueError("Translation result is empty")
+    matches = payload.get("matches") or []
+    detected_source = (matches[0].get("source") if matches else None) or source
+    return SimpleNamespace(text=translated, src=detected_source, dest=target)
         
 
 def is_url(url):
