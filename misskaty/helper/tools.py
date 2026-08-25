@@ -6,13 +6,14 @@ import string
 import time
 from http.cookies import SimpleCookie
 from re import match as re_match
-from googletrans import Translator
+from types import SimpleNamespace
 from typing import Union
 from urllib.parse import urlparse
 
 import cv2
 import numpy as np
 import psutil
+from deep_translator import GoogleTranslator
 
 from misskaty import BOT_NAME, UBOT_NAME, botStartTime
 from misskaty.core.decorator import asyncify
@@ -48,10 +49,10 @@ GENRES_EMOJI = {
 }
 
 
-async def gtranslate(text, source="auto", target="id"):
-    async with Translator() as translator:
-         result = await translator.translate(text, src=source, dest=target)
-         return result
+@asyncify
+def gtranslate(text, source="auto", target="id"):
+    translated = GoogleTranslator(source=source, target=target).translate(text)
+    return SimpleNamespace(text=translated, src=source, dest=target)
         
 
 def is_url(url):
