@@ -51,6 +51,7 @@ GENRES_EMOJI = {
 
 
 async def gtranslate(text, source="auto", target="id"):
+    result = None
     try:
         async with Translator(raise_exception=True) as translator:
             result = await translator.translate(text, src=source, dest=target)
@@ -58,23 +59,29 @@ async def gtranslate(text, source="auto", target="id"):
             return result
     except Exception as error:
         LOGGER.warning("Google Translate failed: %s", error)
-    source_lang = "autodetect" if source == "auto" else source
-    response = await fetch.get(
-        "https://api.mymemory.translated.net/get",
-        params={"q": text, "langpair": f"{source_lang}|{target}"},
-    )
-    response.raise_for_status()
-    payload = response.json()
-    if payload.get("responseStatus") != 200:
-        raise ValueError(payload.get("responseDetails") or "Translation failed")
-    translated = unescape(
-        ((payload.get("responseData") or {}).get("translatedText") or "").strip()
-    )
-    if not translated:
-        raise ValueError("Translation result is empty")
-    matches = payload.get("matches") or []
-    detected_source = (matches[0].get("source") if matches else None) or source
-    return SimpleNamespace(text=translated, src=detected_source, dest=target)
+    try:
+        source_lang = "autodetect" if source == "auto" else source
+        response = await fetch.get(
+            "https://api.mymemory.translated.net/get",
+            params={"q": text, "langpair": f"{source_lang}|{target}"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("responseStatus") != 200:
+            raise ValueError(payload.get("responseDetails") or "Translation failed")
+        translated = unescape(
+            ((payload.get("responseData") or {}).get("translatedText") or "").strip()
+        )
+        if not translated:
+            raise ValueError("Translation result is empty")
+        matches = payload.get("matches") or []
+        detected_source = (matches[0].get("source") if matches else None) or source
+        return SimpleNamespace(text=translated, src=detected_source, dest=target)
+    except Exception as error:
+        LOGGER.warning("MyMemory Translate failed: %s", error)
+    if result is not None:
+        return result
+    return SimpleNamespace(text=str(text), src=source, dest=target)
         
 
 def is_url(url):
