@@ -1080,12 +1080,12 @@ def _compose_default_caption(
     if layout.get("plot") and context.get("plot"):
         res += (
             f"<b>{labels['plot']}:</b>\n"
-            f"<blockquote><code>{html.escape(context['plot'])}</code></blockquote>\n\n"
+            f"<blockquote expandable><code>{html.escape(context['plot'])}</code></blockquote>\n\n"
         )
     if layout.get("keywords") and context.get("keywords"):
         res += (
             f"<b>{labels['keywords']}:</b>\n"
-            f"<blockquote>{html.escape(context['keywords'])}</blockquote>\n"
+            f"<blockquote expandable>{html.escape(context['keywords'])}</blockquote>\n"
         )
     if layout.get("awards") and context.get("awards"):
         res += (
