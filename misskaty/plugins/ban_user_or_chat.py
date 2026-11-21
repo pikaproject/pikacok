@@ -1,13 +1,17 @@
 from curses.ascii import isblank
+from logging import getLogger
 
 from pyrogram import Client, filters
-from pyrogram.errors import ChannelPrivate, PeerIdInvalid
+from pyrogram.errors import ChannelPrivate, PeerIdInvalid, RPCError
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from database.users_chats_db import db
 from misskaty import app
 from misskaty.helper.localization import use_chat_lang
 from misskaty.vars import COMMAND_HANDLER, LOG_CHANNEL, SUDO, SUPPORT_CHAT
+
+
+LOGGER = getLogger("MissKaty")
 
 
 @app.on_message(filters.incoming & filters.private, group=-5)
@@ -33,13 +37,16 @@ async def grp_bd(self: Client, ctx: Message, strings):
         except ChannelPrivate:
             await ctx.stop_propagation()
         r_j = ctx.from_user.mention if ctx.from_user else "Anonymous"
-        await self.send_message(
-            LOG_CHANNEL,
-            strings("log_bot_added", context="grup_tools").format(
-                ttl=ctx.chat.title, cid=ctx.chat.id, tot=total, r_j=r_j
-            ),
-        )
         await db.add_chat(ctx.chat.id, ctx.chat.title)
+        try:
+            await self.send_message(
+                LOG_CHANNEL,
+                strings("log_bot_added", context="grup_tools").format(
+                    ttl=ctx.chat.title, cid=ctx.chat.id, tot=total, r_j=r_j
+                ),
+            )
+        except RPCError as err:
+            LOGGER.warning("Failed to log new chat %s: %s", ctx.chat.id, err)
     chck = await db.get_chat(ctx.chat.id)
     if chck["is_disabled"]:
         buttons = [

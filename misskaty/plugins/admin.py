@@ -299,7 +299,7 @@ async def unban_func(_, message, strings):
 
 # Ban users listed in a message
 @app.on_message(
-    filters.user(SUDO) & filters.command("listban", COMMAND_HANDLER) & filters.group
+    filters.command("listban", COMMAND_HANDLER) & filters.group & filters.user(SUDO)
 )
 @use_chat_lang()
 async def list_ban_(c, message, strings):
@@ -353,7 +353,7 @@ async def list_ban_(c, message, strings):
 
 # Unban users listed in a message
 @app.on_message(
-    filters.user(SUDO) & filters.command("listunban", COMMAND_HANDLER) & filters.group
+    filters.command("listunban", COMMAND_HANDLER) & filters.group & filters.user(SUDO)
 )
 @use_chat_lang()
 async def list_unban(_, message, strings):
