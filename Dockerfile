@@ -3,17 +3,20 @@
 # * @projectName   MissKatyPyro
 # * Copyright ©YasirPedia All rights reserved
 
-# Base Docker Using Ubuntu 24.04, Python 3.12 and Built In Pip
-## With Built in Pip Package
 FROM yasirarism/misskaty-docker:py3.12
-## Without Built in Pip Package
-# FROM yasirarism/misskaty-docker:free
 
-# Set Hostname
-ENV HOSTNAME yasir-server
-# Copy Files
+ENV HOSTNAME=pikaproject
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg git \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc libc6-dev \
+    && python3 -m pip install --no-cache-dir -r requirements.txt \
+    && apt-get purge -y --auto-remove gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY . .
-# Instal pip package
-# RUN pip3 install --no-cache-dir -r requirements.txt
-# Set CMD Bot
 CMD ["bash", "start.sh"]
