@@ -31,5 +31,5 @@ cloudscraper
 openai==1.3.2
 GitPython
 aiofiles
-uvloop==0.19.0
+uvloop==0.22.1
 lxml_html_clean
