@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import sys
+from os import environ
 from typing import Optional
 from urllib.parse import quote_plus
 
@@ -751,6 +752,30 @@ def _extract_people_from_imdb(soup: BeautifulSoup, metadata: dict) -> dict:
     return people
 
 
+async def _translate_imdb_plot(description: str) -> str:
+    base_url = environ.get("SCRAPER_API_URL", "").strip().rstrip("/")
+    api_key = environ.get("SCRAPER_API_KEY", "").strip()
+    if base_url and api_key:
+        try:
+            async with httpx.AsyncClient(timeout=75) as client:
+                response = await client.post(
+                    f"{base_url}/texttranslate/translate",
+                    headers={"X-API-Key": api_key},
+                    json={"text": description, "source": "auto", "target": "id"},
+                )
+                response.raise_for_status()
+                payload = response.json()
+                translation = payload.get("translation") if isinstance(payload, dict) else None
+                if isinstance(translation, str) and translation.strip():
+                    return translation.strip()
+                LOGGER.warning("IMDb plot translation returned an invalid result")
+        except httpx.HTTPStatusError as error:
+            LOGGER.warning("IMDb plot translation returned HTTP %s", error.response.status_code)
+        except (httpx.RequestError, httpx.InvalidURL, ValueError) as error:
+            LOGGER.warning("IMDb plot translation failed: %s", type(error).__name__)
+    return (await gtranslate(description, "auto", "id")).text
+
+
 async def _build_imdb_context(
     client: Client,
     soup: BeautifulSoup,
@@ -918,7 +943,7 @@ async def _build_imdb_context(
     description = metadata.get("description")
     if description:
         if locale == "id":
-            context["plot"] = (await gtranslate(description, "auto", "id")).text
+            context["plot"] = await _translate_imdb_plot(description)
         else:
             context["plot"] = description
     keywords_raw = metadata.get("keywords") or ""
